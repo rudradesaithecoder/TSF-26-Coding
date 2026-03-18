@@ -10,8 +10,8 @@ import pandas as pd
 import numpy as np
 import joblib
 
-scaler = joblib.load('scale_model.pkl')
-model = joblib.load('blink_model.pkl')
+scaler = joblib.load('scale_model_V2.pkl')
+model = joblib.load('blink_model_V2.pkl')
 
 
 #Intensity calculator using predefined and well known formula
@@ -26,12 +26,12 @@ def create_file(filename):
     
     with open(filename, mode = 'w', newline = '') as f:
         writer = csv.writer(f)
-        writer.writerow(["Timestamp", "EAR", "EAR Delta", "BlinkLabel", "Duration"])
+        writer.writerow(["Timestamp", "EAR", "EAR Delta", "BlinkLabel", "Duration", "Min EAR", "Velocity", "Acceleration"])
 
-def write_to_file(filename, EAR_Val = 0 , change = 0, Blink_Label = 0, duration = -1):
+def write_to_file(filename, TimeStamp, EAR_Val = 0 , change = 0, Blink_Label = 0, duration = -1, min_EAR = 1.0, velocity = 0, acceleration = 0):
     with open(filename, mode = 'a', newline = '') as f:
         writer = csv.writer(f)
-        writer.writerow([time.time(), EAR_Val, change, Blink_Label, duration])
+        writer.writerow([TimeStamp, EAR_Val, change, Blink_Label, duration, min_EAR, velocity, acceleration])
 
 #Timer Starter
 start_time = time.time()
@@ -47,8 +47,6 @@ def EARratio(coords):
 #Two Key functions
 mp_face_mesh = mp.solutions.face_mesh
 
-
-
 #Initialising Key Values
 frames = 0
 blinked_frames = 0
@@ -57,9 +55,10 @@ blink_start = 0
 blink_end = 0
 right_indexes = [362, 263, 385, 380, 387, 373]  
 left_indexes = [33, 133, 160, 144, 158, 153] 
-
-
+min_EAR_in_blink = 1.0
 prev_EAR = 0
+prev_velocity = 0
+prev_frame_time = time.time()
 
 
 #Begins recording
@@ -217,11 +216,12 @@ cv2.destroyWindow("Lighting Optimisation")
 
 time.sleep(2)
 
+#Stopwatch reset
 start_time = time.time()
+
 #Using FaceMesh class
 with mp_face_mesh.FaceMesh(max_num_faces = 1, refine_landmarks = True, min_detection_confidence = 0.75, min_tracking_confidence = 0.75) as face_mesh:
 
-    
     create_file('blinks.csv')
     #Video Loop
     while cap.isOpened():
@@ -280,11 +280,33 @@ with mp_face_mesh.FaceMesh(max_num_faces = 1, refine_landmarks = True, min_detec
                 R_EAR = EARratio(R_XYs)
                 L_EAR = EARratio(L_XYs)
                 avg_EAR = (R_EAR + L_EAR)/2
+
+
+                #Time difference (dt)
+                current_frame_time = time.time()
+                dt = current_frame_time - prev_frame_time if (current_frame_time - prev_frame_time) > 0 else 0.03
+                prev_frame_time = current_frame_time
+
+                #Displacement (EAR Delta)
                 del_EAR = avg_EAR - prev_EAR
-                prev_EAR = avg_EAR
+                prev_EAR = avg_EAR # Update for next frame
+
+                #Velocity & Acceleration
+                if dt > 0.001:
+                    current_velocity = del_EAR / dt
+                    # Acceleration is Change in Velocity over Time
+                    crnt_acceleration = (current_velocity - prev_velocity) / dt
+                else:
+                    current_velocity = 0
+                    crnt_acceleration = 0
+
+                prev_velocity = current_velocity # Update for next frame
+                
+                #Time stamp
+                time_since_start = time.time() - start_time 
 
                 #using ML format data
-                clues = pd.DataFrame([[avg_EAR, del_EAR]], columns=['EAR', 'EAR_Change'])
+                clues = pd.DataFrame([[avg_EAR, del_EAR, current_velocity, crnt_acceleration]], columns=['EAR', 'EAR Delta', 'Velocity', 'Acceleration'])
                 scld_clues = scaler.transform(clues)
 
                 #Debugging method
@@ -301,23 +323,26 @@ with mp_face_mesh.FaceMesh(max_num_faces = 1, refine_landmarks = True, min_detec
                         cv2.putText(video, "BLINK!", (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2)
                     blinked_frames += 1
                     blink_dur = -1
+                    #track the lowest EAR seen during this specific blink
+                    if avg_EAR < min_EAR_in_blink:
+                        min_EAR_in_blink = avg_EAR
                 else:
                     if blinked_frames > 0:
                         blinked_frames = 0 
-                        label = 0
                         blink_end = time.time()
-                        blink_dur = round(blink_end - blink_start, 5)
+                        blink_dur = blink_end - blink_start
                     else:
                         blink_dur = -1
-
+                        min_EAR_in_blink = 1.0
+                
                 #Fills CSV File
-                write_to_file('blinks.csv', avg_EAR, del_EAR, prediction, blink_dur)
+                write_to_file('blinks.csv', time_since_start, avg_EAR, del_EAR, prediction, blink_dur, min_EAR_in_blink, current_velocity, crnt_acceleration)
 
                 #Blink count on screen for debugging
                 cv2.putText(video, str(blink_count), (560, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,0), 2)       
         
         #Temporary timer
-        if time.time() - start_time > 60:
+        if time.time() - start_time > 150:
             break
 
         #Closes code when x is pressed
@@ -327,31 +352,40 @@ with mp_face_mesh.FaceMesh(max_num_faces = 1, refine_landmarks = True, min_detec
         #Displays video with mesh
         cv2.imshow("Blink Detection", video)
 
+#Calculates end time
+end_time = time.time()
+
 #Neccesary to stop using webcam
 cap.release()
     
 #Closes webcam window
 cv2.destroyAllWindows()
 
-#Calculates end time
-end_time = time.time()
-
 #Blink Summary
 if blink_count > 0:
     dur_file = pd.read_csv('blinks.csv')
     working_data = dur_file[dur_file['Duration'] >= 0]['Duration']
     avg_blink = round(np.mean(working_data),5)
-    longest_blink = np.max(working_data)
-    shortest_blink = np.min(working_data)
-    #Speed Calculator
+    longest_blink = round(np.max(working_data),5)
+    shortest_blink = round(np.min(working_data),5)
+    
+    #Grouping all the blink events
+    blink_groups = dur_file[dur_file['BlinkLabel'] == 1].groupby('Timestamp')
+
+    #Find the fastest closing velocity for each event
+    individual_blink_speeds = blink_groups['Velocity'].min()
+
+    #Average for average peak velocity
+    avg_peak_velocity = individual_blink_speeds.mean()
+    
+    #Rate Calculator
     seconds = end_time - start_time
-
-
     blink_rate = round(blink_count/seconds, 5)
 
-    print(f"Average Blink Speed: {blink_rate*60} blinks/min")
+    print(f"Average Blink Rate: {blink_rate*60} blinks/min")
     print(f"Average Blink Duration: {avg_blink*1000} ms")
     print(f"Longest Blink: {longest_blink*1000} ms")
-    print(f"Shortest blink: {shortest_blink*1000} ms")
-
-
+    print(f"Shortest Blink: {shortest_blink*1000} ms")
+    print(f"Average Peak Velocity: {avg_peak_velocity} units/sec")
+else:
+    print("No blinks were detected")
