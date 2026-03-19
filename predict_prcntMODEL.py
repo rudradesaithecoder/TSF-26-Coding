@@ -43,6 +43,7 @@ print(f"Cross-Validation Mean Score: {cv_scores.mean()*100:.2f}%")
 
 #Accuracy measure
 predictions = model.predict(scld_clue_tst)
+probability = model.predict_proba(scld_clue_tst)
 score = accuracy_score(label_tst, predictions)
 
 #Accuracy measurement
@@ -54,6 +55,10 @@ print("Detailed Performance Report:")
 # This compares the 'Real' labels vs the 'Predicted' labels
 print(classification_report(label_tst, predictions, target_names=['Healthy', 'PD Risk']))
 
+for i in range (2):
+    print(probability[i][0]*100)
+    print(probability[i][1]*100)
+    print(label_tst.iloc[i])
 '''
 #Save the model and the scaler
 joblib.dump(model, 'detection_model_V1.pkl')
