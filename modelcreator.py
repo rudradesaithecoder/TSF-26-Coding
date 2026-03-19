@@ -51,8 +51,8 @@ print("Detailed Performance Report:")
 # This compares the 'Real' labels vs the 'Predicted' labels
 print(classification_report(label_tst, predictions, target_names=['Open', 'Blink']))
 
-'''#Save the model and the scaler
-joblib.dump(model, 'blink_model_V2.pkl')
-joblib.dump(scaler, 'scale_model_V2.pkl')
+#Save the model and the scaler
+joblib.dump(model, 'blink_model_V3.pkl')
+joblib.dump(scaler, 'scale_model_V3.pkl')
 
-print("Model and Scaler saved successfully!")'''
+print("Model and Scaler saved successfully!")
