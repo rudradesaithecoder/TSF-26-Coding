@@ -9,10 +9,13 @@ import os
 import pandas as pd
 import numpy as np
 import joblib
+from scipy.stats import pearsonr
 
-scaler = joblib.load('scale_model_V3.pkl')
-model = joblib.load('blink_model_V3.pkl')
+scaler = joblib.load('scale_model_V4.pkl')
+model = joblib.load('blink_model_V4.pkl')
 
+if os.path.exists('report.csv'):
+    os.remove('report.csv')
 
 #Intensity calculator using predefined and well known ITU-R 601 formula
 def get_pixel_intensity(pixel_bgr):
@@ -434,5 +437,31 @@ if blink_count > 0:
     print(f"Shortest Blink: {shortest_blink*1000:.2f} ms")
     print(f"Average Peak Velocity: {avg_peak_velocity} units/sec")
     print(f"Blink Closure Instability (StdDev): {closure_consistency:.4f}")
+
+
+
+if len(blink_durations) > 2:
+    # We compare Cumulative Rate vs Duration
+    # We want to see if Duration increases as Rate decreases
+    corr, p_val = pearsonr(cumulative_rates[2:min_length], blink_durations[2:min_length])
+    
+    print(f"Blink Rate vs Duration Correlation (r): {round(corr, 3)}")
+    print(corr)
+    print(p_val)
+    if corr < -0.3:
+        if p_val < 0.05:
+            print("Result: Strong Negative Correlation (Matches PD Profile)")
+        else:
+            print("Result: Possible Strong Negative Correlation (Matches PD Profile)")
+    elif corr > 0.3:
+        if p_val < 0.05:
+            print("Result: Positive Correlation (Unexpected Pattern)")
+        else:
+            print("Result: Possible Positive Correlation (Unexpected Pattern)")
+    else:
+        if p_val < 0.05:
+            print("Result: No significant correlation (Healthy/Stable Profile)")
+        else:
+            print("Result: Possibly No Correlation (Healthy/Stable Profile)")
 else:
     print("No blinks were detected")

@@ -4,7 +4,7 @@ import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 
 #For splitting training data and testing data 
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, cross_val_score
 
 #For Scaling data to match every eye
 from sklearn.preprocessing import StandardScaler
@@ -26,7 +26,7 @@ clue = df[['EAR', 'EAR Delta', 'Velocity', 'Acceleration']]
 label = df['BlinkLabel']
 
 #Splits the data
-clue_tr, clue_tst, label_tr, label_tst = train_test_split(clue, label, test_size=0.2)
+clue_tr, clue_tst, label_tr, label_tst = train_test_split(clue, label, test_size=0.2, random_state=42)
 
 #Scales the data
 scaler = StandardScaler()
@@ -34,16 +34,19 @@ scld_clue_tr = scaler.fit_transform(clue_tr)
 scld_clue_tst = scaler.transform(clue_tst)
 
 #AI Module
-model = RandomForestClassifier(n_estimators=100)
+model = RandomForestClassifier(n_estimators=500, max_depth=10, random_state=42)
 model.fit(scld_clue_tr, label_tr)
+
+#Cross Validation
+cv_scores = cross_val_score(model, scld_clue_tr, label_tr, cv=5)
+print(f"Cross-Validation Mean Score: {cv_scores.mean()*100:.2f}%")
 
 #Accuracy measure
 predictions = model.predict(scld_clue_tst)
 score = accuracy_score(label_tst, predictions)
 
-#Accuracy measurement
+#Accuracy output
 print(f"The score was {score*100:.2f}%")
-
 
 
 print("Detailed Performance Report:")
@@ -52,7 +55,7 @@ print("Detailed Performance Report:")
 print(classification_report(label_tst, predictions, target_names=['Open', 'Blink']))
 
 #Save the model and the scaler
-joblib.dump(model, 'blink_model_V3.pkl')
-joblib.dump(scaler, 'scale_model_V3.pkl')
+joblib.dump(model, 'blink_model_V4.pkl')
+joblib.dump(scaler, 'scale_model_V4.pkl')
 
 print("Model and Scaler saved successfully!")
