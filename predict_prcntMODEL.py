@@ -55,14 +55,14 @@ print("Detailed Performance Report:")
 # This compares the 'Real' labels vs the 'Predicted' labels
 print(classification_report(label_tst, predictions, target_names=['Healthy', 'PD Risk']))
 
+'''#Code for prediction
 for i in range (2):
     print(probability[i][0]*100)
     print(probability[i][1]*100)
-    print(label_tst.iloc[i])
-'''
+    print(label_tst.iloc[i])'''
+
 #Save the model and the scaler
 joblib.dump(model, 'detection_model_V1.pkl')
-joblib.dump(scaler, 'detection_model_1.pkl')
+joblib.dump(scaler, 'detection_scaler_1.pkl')
 
 print("Model and Scaler saved successfully!")
-'''

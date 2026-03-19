@@ -11,6 +11,8 @@ import numpy as np
 import joblib
 from scipy.stats import pearsonr
 
+det_model = joblib.load('detection_model_V1.pkl')
+det_scaler = joblib.load('detection_scaler_1.pkl')
 scaler = joblib.load('scale_model_V4.pkl')
 model = joblib.load('blink_model_V4.pkl')
 
@@ -438,8 +440,7 @@ if blink_count > 0:
     print(f"Average Peak Velocity: {avg_peak_velocity} units/sec")
     print(f"Blink Closure Instability (StdDev): {closure_consistency:.4f}")
 
-
-
+'''
 if len(blink_durations) > 2:
     # We compare Cumulative Rate vs Duration
     # We want to see if Duration increases as Rate decreases
@@ -465,3 +466,8 @@ if len(blink_durations) > 2:
             print("Result: Possibly No Correlation (Healthy/Stable Profile)")
 else:
     print("No blinks were detected")
+'''
+det_clues  = pd.DataFrame([[blink_rate, avg_blink]], columns=['Blink Rate (bpm)', 'Blink Duration (ms)'])
+scld_det_clues = det_scaler.transform(det_clues)
+possibility = det_model.predict_proba(scld_det_clues)
+print(f"{possibility[0][1]}%")
