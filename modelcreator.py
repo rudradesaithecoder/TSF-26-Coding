@@ -19,14 +19,14 @@ from sklearn.metrics import classification_report
 import joblib
 
 #Reads the CSV
-df = pd.read_csv('trainingdata.csv')
+df = pd.read_csv('trainingdata3.csv')
 
 #Determines data to be used as clue and data to be predicted
-clue = df[['EAR', 'EAR Delta', 'Velocity', 'Acceleration']]
+clue = df[['EAR', 'EAR Delta']]
 label = df['BlinkLabel']
 
 #Splits the data
-clue_tr, clue_tst, label_tr, label_tst = train_test_split(clue, label, test_size=0.2, random_state=42)
+clue_tr, clue_tst, label_tr, label_tst = train_test_split(clue, label, test_size=0.2)
 
 #Scales the data
 scaler = StandardScaler()
@@ -34,7 +34,7 @@ scld_clue_tr = scaler.fit_transform(clue_tr)
 scld_clue_tst = scaler.transform(clue_tst)
 
 #AI Module
-model = RandomForestClassifier(n_estimators=500, max_depth=10, random_state=42)
+model = RandomForestClassifier(n_estimators=100, max_depth=10)
 model.fit(scld_clue_tr, label_tr)
 
 #Cross Validation
@@ -55,7 +55,8 @@ print("Detailed Performance Report:")
 print(classification_report(label_tst, predictions, target_names=['Open', 'Blink']))
 
 #Save the model and the scaler
-joblib.dump(model, 'blink_model_V4.pkl')
-joblib.dump(scaler, 'scale_model_V4.pkl')
+joblib.dump(model, 'blink_model_V6.pkl')
+joblib.dump(scaler, 'scale_model_V6.pkl')
 
 print("Model and Scaler saved successfully!")
+
