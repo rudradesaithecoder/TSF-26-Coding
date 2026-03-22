@@ -10,12 +10,13 @@ import pandas as pd
 import numpy as np
 import joblib
 from scipy.interpolate import CubicSpline
-#from scipy.stats import pearsonr
+from scipy.stats import pearsonr
+import matplotlib.pyplot as plt
 
 det_model = joblib.load('detection_model_V2.pkl')
 det_scaler = joblib.load('detection_scaler_V2.pkl')
-scaler = joblib.load('scale_model_V6.pkl')
-model = joblib.load('blink_model_V6.pkl')
+scaler = joblib.load('scale_model_V7_optimized.pkl')
+model = joblib.load('blink_model_V7_optimized.pkl')
 
 scaler.feature_names_in_ = None
 model.feature_names_in_ = None
@@ -27,32 +28,50 @@ if os.path.exists('report.csv'):
 
 from scipy.interpolate import CubicSpline
 
-def get_precise_duration_spline(times, values, min_EAR_during_blink, baseline_EAR):
+def get_blink_physics_spline(times, values, min_EAR_during_blink, baseline_EAR):
     """
-    Calculates duration of COMPLETE closure by looking for time 
-    spent near the absolute minimum EAR.
+    Analyzes the blink using Cubic Spline derivatives for high-precision 
+    velocity, acceleration, and duration.
     """
     try:
         times_arr, indices = np.unique(times, return_index=True)
         values_arr = np.array(values)[indices]
         
-        if len(times_arr) < 4: return 0.0
+        if len(times_arr) < 4: 
+            return None
         
+        # Create the spline
         spline = CubicSpline(times_arr, values_arr, bc_type='natural')
-        # 1ms resolution
-        hi_res_times = np.linspace(times_arr[0], times_arr[-1], num=int((times_arr[-1]-times_arr[0])*1000))
+        
+        # 1ms Resolution interpolation
+        res = 1000 
+        hi_res_times = np.linspace(times_arr[0], times_arr[-1], num=int((times_arr[-1]-times_arr[0])*res))
         hi_res_values = spline(hi_res_times)
         
-        # STRICT THRESHOLD: We define "Complete Closure" as being within 
-        # 0.02 of the absolute minimum reached. This ignores the slow closing/opening slopes.
-        strict_threshold = min_EAR_during_blink + 0.10 * (baseline_EAR - min_EAR_during_blink)
+        # Calculate Derivatives (Velocity and Acceleration)
+        velocities = spline(hi_res_times, 1)
+        accelerations = spline(hi_res_times, 2)
+
+        #Calculating the time at peak
+        peak_idx = np.argmin(hi_res_values)
+        peak_ts_precise = hi_res_times[peak_idx]
         
+        # Precise Duration Logic (10% threshold above minimum)
+        strict_threshold = min_EAR_during_blink + 0.10 * (baseline_EAR - min_EAR_during_blink)
         below = hi_res_times[hi_res_values <= strict_threshold]
-        if len(below) > 1:
-            return below[-1] - below[0]
-        return 0.0
+        
+        duration = below[-1] - below[0] if len(below) > 1 else (times_arr[-1] - times_arr[0])
+        
+        return {
+            "duration": duration,
+            "peak_closing_velocity": np.min(velocities),
+            "peak_ts_precise": peak_ts_precise,
+            "max_acceleration": np.max(np.abs(accelerations)),
+            "start_ts_precise": below[0] if len(below) > 0 else times_arr[0],
+            "end_ts_precise": below[-1] if len(below) > 0 else times_arr[-1]
+        }
     except:
-        return 0.0
+        return None
 
 
 #Intensity calculator using predefined and well known ITU-R 601 formula
@@ -117,6 +136,10 @@ time_buffer = []
 buffer_size = 25 # Store ~0.83 s of data to capture full blink curve
 baseline_ear = 0.3
 threshold_start = 0.25
+
+# Add new lists to store the spline-calculated physics
+spline_peak_velocities = []
+spline_peak_accelerations = []
 
  
 #Begins recording
@@ -260,7 +283,7 @@ with mp_face_mesh.FaceMesh(max_num_faces = 1, refine_landmarks = True, min_detec
         else:
             cv2.putText(flipped_frame, "FACE NOT FOUND", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
             stable_time = -1
-            
+
         cv2.imshow("Lighting Optimisation", flipped_frame)
         #cv2 safety net
         key = cv2.waitKey(1) & 0xff
@@ -326,8 +349,13 @@ with mp_face_mesh.FaceMesh(max_num_faces = 1, refine_landmarks = True, min_detec
             #EAR Calculations
             avg_EAR = (EARratio(R_XYs) + EARratio(L_XYs)) / 2
 
+            # INITIALIZE PHYSICS VARIABLES
+            current_velocity = 0
+            crnt_acceleration = 0
+
             current_time_wall = time.time() # This is our "Master Clock"
             time_since_start = current_time_wall - start_time
+
             ear_buffer.append(avg_EAR)
             time_buffer.append(current_time_wall) # Use the raw wall time here
             
@@ -336,42 +364,36 @@ with mp_face_mesh.FaceMesh(max_num_faces = 1, refine_landmarks = True, min_detec
                 ear_buffer.pop(0)
                 time_buffer.pop(0)
 
+            #Velocity and Acceleration current splicing new method
+            if len(ear_buffer) >= 3:
+                dt = time_buffer[-1] - time_buffer[-2]
+                if dt > 0:
+                    # Velocity: (Current EAR - Previous EAR) / Time
+                    current_velocity = (ear_buffer[-1] - ear_buffer[-2]) / dt
+                    
+                    # Acceleration: (Current Vel - Previous Vel) / Time
+                    # We need at least 3 points for this
+                    prev_dt = time_buffer[-2] - time_buffer[-3]
+                    prev_velocity = (ear_buffer[-2] - ear_buffer[-3]) / prev_dt
+                    crnt_acceleration = (current_velocity - prev_velocity) / dt
+                else:
+                    current_velocity = 0
+                    crnt_acceleration = 0
+
+
             if prev_EAR == 0:
                 prev_EAR = avg_EAR
                 continue # Skip one frame to establish a baseline
 
             #Time difference (dt)
             current_frame_time = time.time()
-            # Calculate dt, but never let it be zero or negative
-            dt = current_frame_time - prev_frame_time
-            if dt <= 0:
-                dt = 0.001 # 1ms fallback for extreme high-speed stability
-            prev_frame_time = current_frame_time
-
-            #Frame Rate double checking
-            print(1/dt)
-
+            
             #Displacement (EAR Delta)
             del_EAR = avg_EAR - prev_EAR
             prev_EAR = avg_EAR # Update for next frame
 
-            #Velocity & Acceleration
-            if dt > 0.001:
-                current_velocity = del_EAR / dt
-                # Acceleration is Change in Velocity over Time
-                crnt_acceleration = (current_velocity - prev_velocity) / dt
-            else:
-                current_velocity = 0
-                crnt_acceleration = 0
-
-            prev_velocity = current_velocity # Update for next frame
-            
-            #Time stamp
-            # Convert the current speed into a "30fps equivalent delta" 
-            # This makes the ML model think it's always looking at a 30fps stream
-            normalized_delta = current_velocity * 0.0333  # 0.0333 is the frame time of 30fps
-
-            clues = np.array([[avg_EAR, normalized_delta]])
+            #AI Predictor
+            clues = np.array([[avg_EAR, current_velocity, crnt_acceleration]])
             scld_clues = scaler.transform(clues)
             prediction = model.predict(scld_clues)[0]
 
@@ -386,7 +408,7 @@ with mp_face_mesh.FaceMesh(max_num_faces = 1, refine_landmarks = True, min_detec
             # This solves your "distance from camera" concern
             if prediction == 0 and len(ear_buffer) > 5:
                 baseline_ear = np.mean(ear_buffer[-5:])
-                threshold_start = baseline_ear * 0.85 # 85% of their normal open eye
+                #threshold_start = baseline_ear * 0.85 # 85% of their normal open eye 
 
             #I strategy of counting a blink when eyes go down(1)
             if prediction == 1:
@@ -397,19 +419,6 @@ with mp_face_mesh.FaceMesh(max_num_faces = 1, refine_landmarks = True, min_detec
                     blink_start = current_time_wall # Used for gap duration
                     time_of_min_ear = current_time_wall
                     actual_blink_start = time_since_start # Used for duration
-
-                    # Logic for intervals (Keep exactly as you had it)
-                    gap_duration = blink_start - last_blink_end
-                    intersaltatory_intervals.append(gap_duration)
-                
-                    #Instantaneous Bpm
-                    inst_rate = 60 / gap_duration if gap_duration > 0 else 0
-                    instantaneous_rates.append(inst_rate)
-
-                    #Cumulative Bpm
-                    total_minutes = (blink_start - start_time) / 60
-                    cum_rate = blink_count / total_minutes
-                    cumulative_rates.append(cum_rate)
 
                     #Latest min EAR 
                     min_EAR_in_blink = avg_EAR
@@ -428,45 +437,50 @@ with mp_face_mesh.FaceMesh(max_num_faces = 1, refine_landmarks = True, min_detec
             else:
                 if blinked_frames > 0:
                     
-
-                    # Only run if we have a valid threshold, otherwise use a default 0.2
-                    #current_thresh = threshold_start if 'threshold_start' in locals() else 0.2
-                    
-                    #refined_blink_dur = get_precise_duration_spline(list(time_buffer), list(ear_buffer), current_thresh)
-
-                    # min_EAR_in_blink tells the spline exactly where the 'bottom' of the blink is
-        
-                    #full_closure_dur = get_precise_duration_spline(list(time_buffer), list(ear_buffer), min_EAR_in_blink)
-
                     # Only send the frames belonging to the current blink to the Spline
-                    num_frames = min(blinked_frames, len(ear_buffer))
+                    #Grab blink window from buffer
+                    num_frames = min(blinked_frames + 4, len(ear_buffer)) # +4 to catch the 'tail' of the blink
                     blink_times = list(time_buffer)[-num_frames:]
-                    blink_ears = list(ear_buffer)[-num_frames:]
-
-                    if len(blink_times) >= 4:
-                        full_closure_dur = get_precise_duration_spline(blink_times, blink_ears, min_EAR_in_blink, baseline_ear)
-                        # ADD THIS: If spline failed to find a duration, use raw timing
-                        if full_closure_dur <= 0:
-                            full_closure_dur = blink_times[-1] - blink_times[0]
-                    else:
-                        full_closure_dur = blink_times[-1] - blink_times[0] if len(blink_times) > 1 else dt
+                    blink_EARs = list(ear_buffer)[-num_frames:]
 
                     # Append the PRECISE duration to your list
+                    physics = get_blink_physics_spline(blink_times, blink_EARs, min_EAR_in_blink, baseline_ear)
 
-                    blink_durations.append(full_closure_dur)
+                    if physics:
+                        #Durations
+                        blink_durations.append(physics["duration"])
 
-                    #Times it was closed new method 
-                    closing_dur = time_of_min_ear - blink_start
-                    closing_durations.append(max(closing_dur, dt))
+                        # Use the precise start and the precise peak from the spline
+                        precise_closing_dur = physics["peak_ts_precise"] - physics["start_ts_precise"]
+                        closing_durations.append(precise_closing_dur)
+
+                        #PRECISE ISI/IBI (Gap from last precise end to this precise start)
+                        gap_duration = physics["start_ts_precise"] - last_blink_end
+                        intersaltatory_intervals.append(max(gap_duration, 0))
+
+                        # REFRESH MASTER CLOCK
+                        last_blink_end = physics["end_ts_precise"]
+
+                        # STORE PEAK PHYSICS
+                        spline_peak_velocities.append(abs(physics["peak_closing_velocity"]))
+                        spline_peak_accelerations.append(physics["max_acceleration"])
+
+                        #Cumulative Blink Rates
+                        current_blink_end_ts = physics['end_ts_precise']
+                        total_minutes_elapsed = (current_blink_end_ts - start_time) / 60.0
+                        cum_rate = blink_count / total_minutes_elapsed
+                        cumulative_rates.append(cum_rate)
+
+                        # Update Rates based on precise Gap
+                        inst_rate = 60 / gap_duration if gap_duration > 0 else 0
+                        instantaneous_rates.append(inst_rate)
 
                     #Minimum EAR's in blink
                     all_min_EARs.append(min_EAR_in_blink)
 
                     # Reset
                     min_EAR_in_blink = 1.0
-                    blink_end = time.time()
-                    last_blink_end = current_time_wall # Syncs back to our master clock
-
+                    
                     #Reset counter
                     blinked_frames = 0
                 else:
@@ -475,7 +489,7 @@ with mp_face_mesh.FaceMesh(max_num_faces = 1, refine_landmarks = True, min_detec
                     min_EAR_in_blink = 1.0
             
             #Fills CSV File
-            write_to_file('blinks.csv', time_since_start, avg_EAR, del_EAR,current_velocity, crnt_acceleration, prediction)
+            write_to_file('blinks.csv', time_since_start, avg_EAR, del_EAR, current_velocity, crnt_acceleration, prediction)
 
             #Blink count on screen for debugging
             cv2.putText(video, str(blink_count), (560, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,0), 2)
@@ -502,83 +516,127 @@ cap.release()
 #Closes webcam window
 cv2.destroyAllWindows()
 
+#Total time calculator
+total_time = end_time - start_time
+
 #Blink Summary
 if blink_count > 0:
-    df = pd.read_csv('blinks.csv')
-    avg_blink = round(np.mean(blink_durations),5)
-    longest_blink = round(np.max(blink_durations),5)
-    shortest_blink = round(np.min(blink_durations),5)
+    # Ensure all lists match the same length (protects against list mismatch errors)
+    min_length = min(len(blink_durations), len(intersaltatory_intervals), len(spline_peak_velocities))
+    blink_rate = blink_count/total_time
 
-    #Ensuring report is accurate
-    min_length = min(len(blink_durations), len(intersaltatory_intervals))
-    
-    #Using dictionary to upload all the data in a csv file
     report_dict = {
         'Blink ID': range(1, min_length + 1),
-        'Duration (ms)':  [d*1000 for d in blink_durations[:min_length]],
+        'Duration (ms)': [d*1000 for d in blink_durations[:min_length]],
         'Closing Phase (ms)': [d*1000 for d in closing_durations[:min_length]],
         'Time since last (ms)': [d*1000 for d in intersaltatory_intervals[:min_length]],
+        'Peak Velocity (units/s)': spline_peak_velocities[:min_length],
+        'Peak Acceleration (units/s^2)': spline_peak_accelerations[:min_length],
         'Instantaneous Blink Rate (bpm)': instantaneous_rates[:min_length],
-        'Cumulative Blink Rate (bpm)': cumulative_rates[:min_length],
+        'Cumulative Rates Blink Rate (bpm)': cumulative_rates[:min_length],
         'Min EAR Closure': all_min_EARs[:min_length]
     }
 
-    #Blink consistency
-    closure_consistency = np.std(all_min_EARs)
-
-    #Feed dictionary as csv
     df_report = pd.DataFrame(report_dict)
     df_report.to_csv('report.csv', index=False)
     
-    #Grouping all the blink events
-    blink_groups = df[df['BlinkLabel'] == 1].groupby('Timestamp')
-
-    #Find the fastest closing velocity for each event
-    individual_blink_speeds = blink_groups['Velocity'].min()
-
-    #Average for average peak velocity
-    avg_peak_velocity = round(abs(individual_blink_speeds.mean()),3)
+    # Calculate Averages using Spline Values
+    avg_peak_velocity = round(np.mean(spline_peak_velocities), 3)
+    avg_blink = round(np.mean(blink_durations), 5)
     
-    #Rate Calculator
-    seconds = end_time - start_time
-    blink_rate = round(blink_count/seconds, 5)
+    print(f"Average Blink Rate: {(blink_count / (end_time - start_time)) * 60:.2f} blinks/min")
+    print(f"Precise Average Duration: {avg_blink*1000:.2f} ms")
+    print(f"Refined Peak Velocity: {avg_peak_velocity} units/sec")
 
-    print(f"Average Blink Rate: {blink_rate*60:.2f} blinks/min")
-    print(f"Average Blink Duration: {avg_blink*1000:.2f} ms")
-    print(f"Longest Blink: {longest_blink*1000:.2f} ms")
-    print(f"Shortest Blink: {shortest_blink*1000:.2f} ms")
-    print(f"Average Peak Velocity: {avg_peak_velocity} units/sec")
-    print(f"Blink Closure Instability (StdDev): {closure_consistency:.4f}")
 
-'''
-if len(blink_durations) > 2:
-    # We compare Cumulative Rate vs Duration
-    # We want to see if Duration increases as Rate decreases
-    corr, p_val = pearsonr(cumulative_rates[2:min_length], blink_durations[2:min_length])
+
+#Enough blinks to be statistically "Safe"
+if len(blink_durations) >= 5:
+    #Use the last 10 blinks (or all if less than 10) for the most current state
+    window = min(len(blink_durations),10)
+    recent_durations = [d * 1000 for d in blink_durations[-window:]] 
+    recent_rates = instantaneous_rates[-window:]
     
-    print(f"Blink Rate vs Duration Correlation (r): {round(corr, 3)}")
-    print(corr)
-    print(p_val)
-    if corr < -0.3:
+    #Calculate the inputs for ML Model
+    avg_dur = np.mean(recent_durations)
+    avg_rate = np.mean(recent_rates)
+    
+    # Run the Predictor
+    det_clues = pd.DataFrame([[avg_rate, avg_dur]], columns=['Blink Rate (bpm)', 'Blink Duration (ms)'])
+    scld_det_clues = det_scaler.transform(det_clues)
+    possibility = det_model.predict_proba(scld_det_clues)
+    
+
+    print(f"Final Probability: {round(possibility[0][1]*100, 2)}%")
+
+    #Statistical Significance (The Correlation Check)
+    if len(blink_durations) >= 8:
+        
+        # We correlate the last 15 blinks to see the immediate trend
+        corr, p_val = pearsonr(instantaneous_rates[-15:], blink_durations[-15:])
+        
+        print(f"Correlation (Rate vs Duration): {round(corr, 3)}")
         if p_val < 0.05:
-            print("Result: Strong Negative Correlation (Matches PD Profile)")
+            print(" Statistical Significance Achieved (Valid Trend)")
         else:
-            print("Result: Possible Strong Negative Correlation (Matches PD Profile)")
-    elif corr > 0.3:
-        if p_val < 0.05:
-            print("Result: Positive Correlation (Unexpected Pattern)")
-        else:
-            print("Result: Possible Positive Correlation (Unexpected Pattern)")
-    else:
-        if p_val < 0.05:
-            print("Result: No significant correlation (Healthy/Stable Profile)")
-        else:
-            print("Result: Possibly No Correlation (Healthy/Stable Profile)")
+            print("Trend is not yet statistically significant.")
 else:
-    print("No blinks were detected")
-'''
+    print("Session too short")
 
-det_clues  = pd.DataFrame([[blink_rate*60, avg_blink*1000]], columns=['Blink Rate (bpm)', 'Blink Duration (ms)'])
-scld_det_clues = det_scaler.transform(det_clues)
-possibility = det_model.predict_proba(scld_det_clues)
-print(f"{possibility[0][1]*100:2f}%")
+
+
+'''# --- REFINED HEURISTIC CHECKING ---
+
+# 1. Load your data
+df = pd.read_csv('blinks.csv')
+
+# 2. Define your "Physics Thresholds" 
+# These represent the 'minimum effort' a real blink must exert
+MIN_VELOCITY_FOR_BLINK = 4.0
+MIN_ACCEL_FOR_BLINK = 75.0
+
+# 3. Group frames into unique 'Events'
+# This creates a unique ID for every contiguous block of 1s or 0s
+df['event_id'] = (df['BlinkLabel'] != df['BlinkLabel'].shift()).cumsum()
+
+# 4. Identify the "Peak Strength" of each event
+# We only care about groups where BlinkLabel is 1
+blink_groups = df[df['BlinkLabel'] == 1].groupby('event_id')
+
+# For every frame in a blink, map the MAX velocity/acceleration reached during that blink
+df['peak_vel_reached'] = blink_groups['Velocity'].transform(lambda x: x.abs().max())
+df['peak_accel_reached'] = blink_groups['Acceleration'].transform(lambda x: x.abs().max())
+df['frame_count'] = blink_groups['BlinkLabel'].transform('count')
+
+# 5. Apply the "Refined Heuristic"
+# RULE A: If a blink event never reached the Velocity OR Acceleration threshold, it's a squint/noise -> Set to 0
+df.loc[
+    (df['BlinkLabel'] == 1) & 
+    ((df['peak_vel_reached'] < MIN_VELOCITY_FOR_BLINK) | 
+     (df['peak_accel_reached'] < MIN_ACCEL_FOR_BLINK)), 
+    'BlinkLabel'
+] = 0
+
+# RULE B: Anti-Flicker (Remove blinks that lasted only 1 frame)
+df.loc[(df['BlinkLabel'] == 1) & (df['frame_count'] < 2), 'BlinkLabel'] = 0
+
+# 6. Clean up and Save (APPEND MODE)
+# Remove the helper columns
+df_clean = df.drop(columns=['event_id', 'peak_vel_reached', 'peak_accel_reached', 'frame_count'])
+
+file_path = 'refined_training_data.csv'
+
+# Check if the file already exists
+file_exists = os.path.isfile(file_path)
+
+# Save with mode='a' (append)
+# header=not file_exists means: "Only write the header if the file DOES NOT exist yet"
+df_clean.to_csv(file_path, mode='a', index=False, header=not file_exists)
+
+print("Refinement and Appending Complete!")
+print(f"Current Batch - Original Blink Frames: {len(df[df['BlinkLabel'] == 1])}") # Note: using df before cleaning for comparison
+print(f"Current Batch - Refined Blink Frames Added: {len(df_clean[df_clean['BlinkLabel'] == 1])}")
+
+# To see the total size of your training set now:
+total_rows = len(pd.read_csv(file_path))
+print(f"Total rows now in {file_path}: {total_rows}"'''

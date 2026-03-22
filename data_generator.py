@@ -1,4 +1,4 @@
-import pandas as pd
+'''import pandas as pd
 import numpy as np
 import os
 import csv
@@ -62,4 +62,43 @@ data_file = {
 df = pd.DataFrame(data_file)
 df = df.sample(frac=1, random_state=42).reset_index(drop=True)
 df.to_csv('PatientsFile.csv', index=False)
+'''
 
+
+
+'''import pandas as pd
+
+# 1. Load your master training data
+df = pd.read_csv('refined_training_data.csv')
+
+# 2. Define the "Gold Standard" thresholds
+V_THRESH = 5.0
+A_THRESH = 100.0
+
+# 3. Group contiguous frames into unique 'events'
+df['event_id'] = (df['BlinkLabel'] != df['BlinkLabel'].shift()).cumsum()
+
+# 4. Identify the "Peak Strength" of each blink event
+blink_groups = df[df['BlinkLabel'] == 1].groupby('event_id')
+
+# Map the peak velocity and acceleration reached during each blink back to the main dataframe
+df['peak_vel_event'] = blink_groups['Velocity'].transform(lambda x: x.abs().max())
+df['peak_accel_event'] = blink_groups['Acceleration'].transform(lambda x: x.abs().max())
+
+# 5. PURIFY: Re-label weak blinks to 0 (Open)
+# A blink is "Weak" if it fails to reach EITHER the Velocity OR Acceleration limit
+weak_blink_filter = (df['BlinkLabel'] == 1) & (
+    (df['peak_vel_event'] < V_THRESH) | 
+    (df['peak_accel_event'] < A_THRESH)
+)
+
+frames_changed = len(df[weak_blink_filter])
+df.loc[weak_blink_filter, 'BlinkLabel'] = 0
+
+# 6. Save the new high-quality training file
+df_purified = df.drop(columns=['event_id', 'peak_vel_event', 'peak_accel_event'])
+df_purified.to_csv('master_training_purified.csv', index=False)
+
+print(f"Purification Complete!")
+print(f"Total frames re-labeled from 'Blink' to 'Open': {frames_changed}")
+print("Your new training file is: master_training_purified.csv")'''
