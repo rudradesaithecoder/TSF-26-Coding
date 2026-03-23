@@ -1,55 +1,67 @@
-'''import pandas as pd
+import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 import os
 import csv
 
-if os.path.exists('PatientsFile.csv'):
-    os.remove('PatientsFile.csv')
 
-hc_rate_mean = 16.90 # Based on Guoy
+def get_params(mean, std):
+    # Calculate sigma for log-space
+    sigma = np.sqrt(np.log(1 + (std**2 / mean**2)))
+    # Calculate mu for log-space
+    mu = np.log(mean) - 0.5 * (sigma**2)
+    return mu, sigma
+
+if os.path.exists('PatientsFile2.csv'):
+    os.remove('PatientsFile2.csv')
+
+hc_rate_mean = 19.30 # Based on Vasudevan
 hc_rate_std = 17.06 # Based on Vasudevan
 hc_dur_mean = 55.05 #Based on Vasudevan
-hc_dur_std = 8.10 #Based on Vasudevam
+hc_dur_std = 8.10 #Based on Vasudevan
+
+#Using function logarithmised data values
+hc_rate_mu, hc_rate_sigma = get_params(hc_rate_mean, hc_rate_std)
+hc_dur_mu, hc_dur_sigma = get_params(hc_dur_mean, hc_dur_std)
 
 
-corr = -0.21
-pd_rate_mean = 10.8 #Based on Gouy
+corr = -0.228
+pd_rate_mean = 15.28 #Based on Vasudevan
 pd_rate_std = 8.92 #based on Vasudevan
 pd_dur_mean = 63.25 #Based on Vasudevan
 pd_dur_std = 15.74 #based on Vasudevan
 
+#Using function logarithmised data values
+pd_rate_mu, pd_rate_sigma = get_params(pd_rate_mean, pd_rate_std)
+pd_dur_mu, pd_dur_sigma = get_params(pd_dur_mean, pd_dur_std)
+
 number = int(input("Enter the number of datasets you want for each: "))
 
 #Generating random numbers based on paper's 
-
-#Healthy Control numbers 
-hc_rate = np.random.normal(hc_rate_mean, hc_rate_std, number)
-hc_dur = np.random.normal(hc_dur_mean, hc_dur_std, number)
+hc_rates = np.random.lognormal(hc_rate_mu, hc_rate_sigma, number)
+hc_durs = np.random.lognormal(hc_dur_mu, hc_dur_sigma, number)
+hc_labels = [0]*number
 
 #Clipping Healthy Control numbers
-hc_rate = np.clip(hc_rate, 5.0, None)
-hc_dur = np.clip(hc_dur, 40.0, None)
+#hc_rate = np.clip(hc_rate, 5.0, None)
+#hc_dur = np.clip(hc_dur, 40.0, None)
 
-hc_label = [0]*number
+#Generate the 'randomness' for Rate (as a Z-score)
+z_rates = np.random.normal(0, 1, number)
+pd_rates = np.exp(pd_rate_mu + pd_rate_sigma * z_rates)
 
-#Creating the PD Rate and Clipping
-pd_rate = np.random.normal(pd_rate_mean, pd_rate_std, number)
+#Generate the 'randomness' for Duration (linked to the Rate's Z-score)
+#Use the correlation to pull the Duration Z-score in the opposite direction
+z_dur_noise = np.random.normal(0, 1, number)
+z_dur = (corr * z_rates) + (np.sqrt(1 - corr**2) * z_dur_noise)
+pd_durs = np.exp(pd_dur_mu + pd_dur_sigma * z_dur)
 
-#Creating the PD Duration using the correlation
-pd_dur = pd_dur_mean + (corr*(pd_rate - pd_rate_mean)) + np.random.normal(0,10,number)
-
-#Clipping PD numbers
-pd_rate = np.clip(pd_rate, 2.0, None) #Nishikawa extremely low clipping
-pd_dur = np.clip(pd_dur, 30.0, None)
-
-#PD_Labels
-pd_label = [1]*number
+pd_labels = [1]*number
 
 #Combining all the patients
-blink_rates = np.concatenate([hc_rate,pd_rate])
-durations = np.concatenate([hc_dur,pd_dur])
-labels = np.concatenate([hc_label,pd_label])
-
+blink_rates = np.concatenate([hc_rates,pd_rates])
+durations = np.concatenate([hc_durs,pd_durs])
+labels = np.concatenate([hc_labels,pd_labels])
 
 
 data_file = {
@@ -58,11 +70,14 @@ data_file = {
     'Label': labels
 }
 
-
 df = pd.DataFrame(data_file)
+print(f"PD Rate Mean: {df[df['Label']==1]['Blink Rate (bpm)'].mean()}")
+print(f"PD Corr: {df[df['Label']==1].corr().iloc[0,1]}")
+
+
 df = df.sample(frac=1, random_state=42).reset_index(drop=True)
-df.to_csv('PatientsFile.csv', index=False)
-'''
+df.to_csv('PatientsFile2.csv', index=False)
+
 
 
 
@@ -101,4 +116,21 @@ df_purified.to_csv('master_training_purified.csv', index=False)
 
 print(f"Purification Complete!")
 print(f"Total frames re-labeled from 'Blink' to 'Open': {frames_changed}")
-print("Your new training file is: master_training_purified.csv")'''
+print("Your new training file is: master_training_purified.csv")
+
+'''
+'''
+
+
+df = pd.read_csv('PatientFile2.csv')
+df_filtered = df[df['Label'] == 1]
+plt.scatter(df_filtered['Blink Duration (ms)'], df_filtered['Blink Rate (bpm)'], marker = 'o', linestyle = '-', color = 'blue', alpha=0.6 )
+plt.xlabel('Duration')
+plt.ylabel('Rate')
+plt.title('Correlation Check')
+plt.grid(True)
+#plt.axhline(y = 4, color = 'black', linestyle = '--', linewidth = 1)
+#plt.axhline(y = -4, color = 'black', linestyle = '--', linewidth = 1)
+#plt.fill_between(df_filtered['Timestamp'], -4, 4, color = 'green', alpha = 0.3)
+plt.savefig('FirstPlotV8.png')
+plt.clf()'''

@@ -6,14 +6,14 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import classification_report, accuracy_score
 
 #Load and Prepare
-df = pd.read_csv('master_training_purified.csv')
+df = pd.read_csv('master_training_SHARPENED.csv')
 X = df[['EAR', 'Velocity', 'Acceleration']]
 y = df['BlinkLabel']
 
 # Use stratify=y to ensure the test set has the same % of blinks as the training set
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, stratify=y, random_state=42)
 
-#cale
+#Scale
 scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
@@ -57,7 +57,10 @@ predictions = best_model.predict(X_test_scaled)
 print("\nFinal Performance Report:")
 print(classification_report(y_test, predictions, target_names=['Open', 'Blink']))
 
-#Save and dump the model
+print(accuracy_score(y_test, predictions)*100)
+
+'''#Save and dump the model
 joblib.dump(best_model, 'blink_model_V7_optimized.pkl')
 joblib.dump(scaler, 'scale_model_V7_optimized.pkl')
 print("\nOptimized Model and Scaler saved!")
+'''
