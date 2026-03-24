@@ -15,8 +15,8 @@ import matplotlib.pyplot as plt
 
 det_model = joblib.load('detection_model_V2.pkl')
 det_scaler = joblib.load('detection_scaler_V2.pkl')
-scaler = joblib.load('scale_model_V7_optimized.pkl')
-model = joblib.load('blink_model_V7_optimized.pkl')
+scaler = joblib.load('scale_model_V8_optimized.pkl')
+model = joblib.load('blink_model_V8_optimized.pkl')
 
 scaler.feature_names_in_ = None
 model.feature_names_in_ = None
@@ -360,7 +360,6 @@ with mp_face_mesh.FaceMesh(max_num_faces = 1, refine_landmarks = True, min_detec
         if result.multi_face_landmarks:
 
             face_landmark = result.multi_face_landmarks[0]
-            #Loop to draw a mesh and for values
         
             #Getting the x and y's of the indexes
             R_XYs = [(face_landmark.landmark[r].x, face_landmark.landmark[r].y) for r in right_indexes]
@@ -369,17 +368,17 @@ with mp_face_mesh.FaceMesh(max_num_faces = 1, refine_landmarks = True, min_detec
             #EAR Calculations
             avg_EAR = (EARratio(R_XYs) + EARratio(L_XYs)) / 2
 
-            # INITIALIZE PHYSICS VARIABLES
+            #INITIALIZE PHYSICS VARIABLES
             current_velocity = 0
             crnt_acceleration = 0
 
-            current_time_wall = time.time() # This is our "Master Clock"
+            current_time_wall = time.time() #"Master Clock"
             time_since_start = current_time_wall - start_time
 
             ear_buffer.append(avg_EAR)
             time_buffer.append(current_time_wall) # Use the raw wall time here
             
-            #Ear buffer list new Method ##############################################
+            #Ear buffer list new Method
             if len(ear_buffer) > buffer_size:
                 ear_buffer.pop(0)
                 time_buffer.pop(0)
@@ -391,8 +390,8 @@ with mp_face_mesh.FaceMesh(max_num_faces = 1, refine_landmarks = True, min_detec
                     # Velocity: (Current EAR - Previous EAR) / Time
                     current_velocity = (ear_buffer[-1] - ear_buffer[-2]) / dt
                     
-                    # Acceleration: (Current Vel - Previous Vel) / Time
-                    # We need at least 3 points for this
+                    #Acceleration:
+                    #At least 3 points for this
                     prev_dt = time_buffer[-2] - time_buffer[-3]
                     prev_velocity = (ear_buffer[-2] - ear_buffer[-3]) / prev_dt
                     crnt_acceleration = (current_velocity - prev_velocity) / dt
@@ -571,8 +570,8 @@ if blink_count > 0:
         'Blink ID': range(1, min_length + 1),
         'Duration (ms)': [d*1000 for d in blink_durations[:min_length]],
         'Bottom Pause (ms)': [d*1000 for d in pause_durations[:min_length]],           # NEW: PD specific
-        'Opening Velocity': opening_velocities[:min_length],                           # NEW: PD specific
         'Closing Velocity': spline_peak_velocities[:min_length],
+        'Opening Velocity': opening_velocities[:min_length],                           # NEW: PD specific
         'Symmetry Ratio': symmetry_ratios[:min_length],                                # New: PD specific
         'Blink Amplitude': blink_amplitudes[:min_length],                              # NEW: PD specific
         'Time since last (s)': intersaltatory_intervals[:min_length],
@@ -593,7 +592,7 @@ if blink_count > 0:
     print(f"Refined Peak Velocity: {avg_peak_velocity} units/sec")
 
 
-#Enough blinks to be statistically "Safe"
+#Enough blinks to be safe
 if len(blink_durations) >= 5:
     #Use the last 10 blinks (or all if less than 10) for the most current state
     window = min(len(blink_durations),10)

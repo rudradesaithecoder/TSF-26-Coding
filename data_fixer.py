@@ -105,3 +105,13 @@ for i in range(1, len(df) - 1):
         df.loc[i, 'BlinkLabel'] = 1
 
 df.to_csv('master_training_SHARPENED.csv', index=False)
+
+
+
+# Create these features before training
+df['Norm_Velocity'] = df['Velocity'].abs() / df['Amplitude']
+df['Percent_Closure'] = df['Amplitude'] / df['Baseline_EAR']
+df['Pause_Ratio'] = df['Pause_ms'] / df['Total_Duration_ms']
+
+# Your new training set
+X = df[['Norm_Velocity', 'Percent_Closure', 'Pause_Ratio', 'Acceleration']]

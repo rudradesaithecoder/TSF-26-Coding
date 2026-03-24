@@ -5,6 +5,77 @@ import os
 import csv
 
 
+def get_log_params(mean, std):
+    variance = std**2
+    mu = np.log(mean**2 / np.sqrt(variance + mean**2))
+    sigma = np.sqrt(np.log(1 + (variance / mean**2)))
+    return mu, sigma
+
+def generate_full_clinical_data(num_people=200, blinks_per_person=20):
+    rows = []
+    
+    # Healthy: Close Vel 189.2, Open Vel 102.6, Amp 7.4mm, Close Dur 69.8ms, Open Dur 190.7ms
+    # PD (OFF): Close Vel 91.9, Open Vel 54.3, Amp 3.7mm, Close Dur 69.9ms, Open Dur 194.5ms
+    
+    for i in range(num_people):
+        is_pd = np.random.choice([0, 1])
+        subj_baseline = np.random.uniform(0.28, 0.45) # Random eye size
+        
+        if is_pd == 0:
+            # HEALTHY DISTRIBUTIONS
+            c_vel_m, c_vel_s = get_log_params(189.2, 40)
+            o_vel_m, o_vel_s = get_log_params(102.6, 25)
+            amp_m, amp_s = get_log_params(7.4, 1.5)
+            c_dur_m, c_dur_s = get_log_params(69.8, 15)
+            o_dur_m, o_dur_s = get_log_params(190.7, 40)
+            pause_m, pause_s = get_log_params(44.2, 10)
+        else:
+            # PD DISTRIBUTIONS (Slower, Smaller, Asymmetric)
+            c_vel_m, c_vel_s = get_log_params(91.9, 30)
+            o_vel_m, o_vel_s = get_log_params(54.3, 15)
+            amp_m, amp_s = get_log_params(3.7, 1.2)
+            c_dur_m, c_dur_s = get_log_params(69.9, 20)
+            o_dur_m, o_dur_s = get_log_params(194.5, 50)
+            pause_m, pause_s = get_log_params(135.1, 40)
+
+        for _ in range(blinks_per_person):
+            # Generate raw physics (mm and ms)
+            raw_c_vel = np.random.lognormal(c_vel_m, c_vel_s)
+            raw_o_vel = np.random.lognormal(o_vel_m, o_vel_s)
+            raw_amp = np.random.lognormal(amp_m, amp_s)
+            c_dur = np.random.lognormal(c_dur_m, c_dur_s)
+            o_dur = np.random.lognormal(o_dur_m, o_dur_s)
+            pause = np.random.lognormal(pause_m, pause_s)
+
+            # --- SCALE TO YOUR EAR WORLD ---
+            # We treat 10mm as "100% open" for scaling purposes
+            amp_ear = (raw_amp / 10.0) * subj_baseline
+            c_vel_ear = (raw_c_vel / 10.0) * subj_baseline
+            o_vel_ear = (raw_o_vel / 10.0) * subj_baseline
+            
+            # --- CALCULATE SYMMETRY RATIOS (The ML's best friends) ---
+            vel_symmetry = o_vel_ear / c_vel_ear if c_vel_ear != 0 else 1
+            dur_symmetry = o_dur / c_dur if c_dur != 0 else 1
+
+            rows.append({
+                'baseline': subj_baseline,
+                'amplitude': amp_ear,
+                'closing_velocity': c_vel_ear,
+                'opening_velocity': o_vel_ear,
+                'closing_duration': c_dur,
+                'opening_duration': o_dur,
+                'pause_ms': pause,
+                'vel_symmetry': vel_symmetry,
+                'dur_symmetry': dur_symmetry,
+                'label': is_pd
+            })
+            
+    return pd.DataFrame(rows)
+
+df = generate_full_clinical_data()
+df.to_csv('clinical__training.csv', index=False)
+
+'''
 def get_params(mean, std):
     # Calculate sigma for log-space
     sigma = np.sqrt(np.log(1 + (std**2 / mean**2)))
@@ -76,7 +147,7 @@ print(f"PD Corr: {df[df['Label']==1].corr().iloc[0,1]}")
 
 
 df = df.sample(frac=1, random_state=42).reset_index(drop=True)
-df.to_csv('PatientsFile2.csv', index=False)
+df.to_csv('PatientsFile2.csv', index=False)'''
 
 
 
