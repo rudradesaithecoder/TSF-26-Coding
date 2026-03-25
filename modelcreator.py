@@ -6,12 +6,13 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import classification_report, accuracy_score
 
 #Load and Prepare
-df = pd.read_csv('manually_refined.csv')
-X = df[['EAR', 'Velocity', 'Acceleration']]
+df = pd.read_csv('manually_purified_V2.csv')
+X = df[['EAR_Relative', 'Velocity', 'Acceleration', 'EAR_Prev', 'EAR_Next']]
 y = df['BlinkLabel']
 
 # Use stratify=y to ensure the test set has the same % of blinks as the training set
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, stratify=y, random_state=42)
+
 
 #Scale
 scaler = StandardScaler()
@@ -49,7 +50,7 @@ print(f"Best Parameters: {grid_search.best_params_}")
 
 #Print the importance of each factor in AI's decision-making process
 importances = best_model.feature_importances_
-for feat, importance in zip(['EAR', 'Velocity', 'Acceleration'], importances):
+for feat, importance in zip(['EAR_Relative', 'Velocity', 'Acceleration', 'EAR_Prev', 'EAR_Next'], importances):
     print(f"Feature '{feat}' Importance: {importance:.4f}")
 
 #Evaluate the model's performance
@@ -58,8 +59,10 @@ print("\nFinal Performance Report:")
 print(classification_report(y_test, predictions, target_names=['Open', 'Blink']))
 
 print(accuracy_score(y_test, predictions)*100)
-'''
+
 #Save and dump the model
-joblib.dump(best_model, 'blink_model_V8_optimized.pkl')
-joblib.dump(scaler, 'scale_model_V8_optimized.pkl')
-print("\nOptimized Model and Scaler saved!")'''
+joblib.dump(best_model, 'blink_model_V9_experimental.pkl')
+joblib.dump(scaler, 'scale_model_V9_experimental.pkl')
+print("\nOptimized Model and Scaler saved!")
+
+#V8 optimised is the best model 

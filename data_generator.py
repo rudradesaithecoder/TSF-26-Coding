@@ -4,6 +4,11 @@ import matplotlib.pyplot as plt
 import os
 import csv
 
+#Value for mm average
+mm_val = 9.0
+
+if os.path.exists('clinical__training.csv'):
+    os.remove('clinical__training.csv')
 
 def get_log_params(mean, std):
     variance = std**2
@@ -47,32 +52,34 @@ def generate_full_clinical_data(num_people=200, blinks_per_person=20):
             o_dur = np.random.lognormal(o_dur_m, o_dur_s)
             pause = np.random.lognormal(pause_m, pause_s)
 
-            # --- SCALE TO YOUR EAR WORLD ---
-            # We treat 10mm as "100% open" for scaling purposes
-            amp_ear = (raw_amp / 10.0) * subj_baseline
-            c_vel_ear = (raw_c_vel / 10.0) * subj_baseline
-            o_vel_ear = (raw_o_vel / 10.0) * subj_baseline
+            # --- SCALE TO EAR ---
+            amp_ear = (raw_amp / mm_val) * subj_baseline
+            c_vel_ear = (raw_c_vel / mm_val) * subj_baseline
+            o_vel_ear = (raw_o_vel / mm_val) * subj_baseline
             
-            # --- CALCULATE SYMMETRY RATIOS (The ML's best friends) ---
+            # --- CALCULATE SYMMETRY RATIOS  ---
             vel_symmetry = o_vel_ear / c_vel_ear if c_vel_ear != 0 else 1
             dur_symmetry = o_dur / c_dur if c_dur != 0 else 1
 
             rows.append({
-                'baseline': subj_baseline,
-                'amplitude': amp_ear,
-                'closing_velocity': c_vel_ear,
-                'opening_velocity': o_vel_ear,
-                'closing_duration': c_dur,
-                'opening_duration': o_dur,
-                'pause_ms': pause,
-                'vel_symmetry': vel_symmetry,
-                'dur_symmetry': dur_symmetry,
-                'label': is_pd
+                'Baseline': subj_baseline,
+                'Amplitude': amp_ear,
+                'Closing Vel': c_vel_ear,
+                'Opening Vel': o_vel_ear,
+                'Closing Dur': c_dur,
+                'Opening Dur': o_dur,
+                'Pause Time': pause,
+                'Vel Symmetry': vel_symmetry,
+                'Dur Symmetry': dur_symmetry,
+                'Label': is_pd
             })
             
     return pd.DataFrame(rows)
 
-df = generate_full_clinical_data()
+patients = int(input("Enter number of patients to create data: "))
+blinks = int(input("Enter desired number of blinks per patient: "))
+
+df = generate_full_clinical_data(patients, blinks)
 df.to_csv('clinical__training.csv', index=False)
 
 '''
