@@ -13,82 +13,75 @@ from scipy.interpolate import CubicSpline
 from scipy.stats import pearsonr
 import matplotlib.pyplot as plt
 
-det_model = joblib.load('detection_model_V2.pkl')
-det_scaler = joblib.load('detection_scaler_V2.pkl')
+
+#Importing all the models
+vol_diag_model = joblib.load('vol_clinical_diagnosis_model.pkl')
+vol_scaler = joblib.load('vol_clinical_scaler.pkl')
+det_model = joblib.load('rate_duration_model.pkl')
+det_scaler = joblib.load('rate_duration_scaler.pkl')
 scaler = joblib.load('scale_model_V9_experimental.pkl')
 model = joblib.load('blink_model_V9_experimental.pkl')
+diag_model = joblib.load('clinical_diagnosis_model.pkl')
+diag_scaler = joblib.load('clinical_scaler.pkl')
 
-scaler.feature_names_in_ = None
+'''scaler.feature_names_in_ = None
 model.feature_names_in_ = None
 det_scaler.feature_names_in_ = None
-det_model.feature_names_in_ = None
+det_model.feature_names_in_ = None'''
 
 if os.path.exists('report.csv'):
     os.remove('report.csv')
 
-from scipy.interpolate import CubicSpline
 
 def get_blink_physics_spline(times, values, min_EAR_during_blink, baseline_EAR):
-    """
-    Refined for PD Diagnosis based on Agostino et al. (2008).
-    Captures Opening vs Closing velocity and the 'Basal Ganglia Pause'.
-    """
     try:
         times_arr, indices = np.unique(times, return_index=True)
         values_arr = np.array(values)[indices]
         
-        if len(times_arr) < 4: 
-            return None
+        if len(times_arr) < 4: return None
         
         spline = CubicSpline(times_arr, values_arr, bc_type='natural')
-        
         res = 1000 
         hi_res_times = np.linspace(times_arr[0], times_arr[-1], num=int((times_arr[-1]-times_arr[0])*res))
         hi_res_values = spline(hi_res_times)
-        
         velocities = spline(hi_res_times, 1)
-        accelerations = spline(hi_res_times, 2)
 
         peak_idx = np.argmin(hi_res_values)
         peak_ts_precise = hi_res_times[peak_idx]
         
-        # --- NEW DIAGNOSTIC THRESHOLDS ---
-        # Capture 85% of the total movement to see the 'slow start' and 'slow finish'
         diagnostic_threshold = min_EAR_during_blink + 0.85 * (baseline_EAR - min_EAR_during_blink)
         below = hi_res_times[hi_res_values <= diagnostic_threshold]
         
-        # The 'Pause' threshold: Time spent at the absolute bottom (0.02 range)
-        # PD patients 'stick' at the bottom due to switching delays
+        if len(below) < 2: return None # Safety check
+
         pause_threshold = min_EAR_during_blink + 0.02
         at_bottom = hi_res_times[hi_res_values <= pause_threshold]
         pause_duration = (at_bottom[-1] - at_bottom[0]) if len(at_bottom) > 1 else 0
 
-        # --- SYMMETRY LOGIC ---
         start_t = below[0]
         end_t = below[-1]
         
         closing_time = peak_ts_precise - start_t
         opening_time = end_t - peak_ts_precise
         
-        # Avoid division by zero; Ratio = Closing / Opening
-        # Healthy is usually < 1.0 (Opening takes longer). PD often approaches 1.0 or higher.
-        symmetry_ratio = closing_time / opening_time if opening_time > 0 else 1.0
-        
-        duration = below[-1] - below[0] if len(below) > 1 else (times_arr[-1] - times_arr[0])
-        
+        c_vel = abs(np.min(velocities))
+        o_vel = np.max(velocities)
+
         return {
-            "duration": duration,
-            "peak_closing_velocity": np.min(velocities), # Downward stroke
-            "peak_opening_velocity": np.max(velocities), # Upward stroke (Crucial for PD)
-            "pause_duration": pause_duration,            # The 'Switching' Delay
-            "peak_ts_precise": peak_ts_precise,
-            "max_acceleration": np.max(np.abs(accelerations)),
-            "start_ts_precise": below[0] if len(below) > 0 else times_arr[0],
-            "end_ts_precise": below[-1] if len(below) > 0 else times_arr[-1],
-            "amplitude": (baseline_EAR - min_EAR_during_blink), # PD has 'low amplitude'
-            "symmetry_ratio": symmetry_ratio  # Symmetry ratio of opening and clsoing
+            "duration": (end_t - start_t),
+            "start_ts_precise": start_t,  
+            "end_ts_precise": end_t,      
+            "closing_dur": closing_time,
+            "opening_dur": opening_time,
+            "peak_closing_velocity": c_vel,
+            "peak_opening_velocity": o_vel,
+            "pause_duration": pause_duration,
+            "amplitude": (baseline_EAR - min_EAR_during_blink),
+            "velocity_symmetry": o_vel / c_vel if c_vel != 0 else 0,
+            "duration_symmetry": opening_time / closing_time if closing_time > 0 else 0,
+            "baseline": baseline_EAR
         }
-    except:
+    except Exception as e:
         return None
 
 
@@ -140,19 +133,23 @@ symmetry_ratios = []
 all_min_EARs = []
 instantaneous_rates = []
 cumulative_rates = []
+vel_symmetry = []
+dur_symmetry = []
+closing_times = []
+opening_times = []
+closing_velocities = []
 right_indexes = [362, 263, 385, 380, 387, 373]  
 left_indexes = [33, 133, 160, 144, 158, 153] 
 min_EAR_in_blink = 1.0
 prev_EAR = 0
 prev_velocity = 0
 time_of_min_ear = 0
-#closing_durations = []
 last_blink_start_timestamp = 0
 v_target = 0
 accel_target = 0
 target_ear = 0
 
-# Latest solution idea (Using buffer)
+#Latest solution idea (Using buffer)
 
 ear_buffer = []
 time_buffer = []
@@ -160,7 +157,7 @@ buffer_size = 25 # Stores ~0.83 s of data to capture full blink curve
 baseline_ear = 0.3
 threshold_start = 0.25
 
-# Add new lists to store the spline-calculated physics
+#Add new lists to store the spline-calculated physics
 spline_peak_velocities = []
 #spline_peak_accelerations = []
 
@@ -456,7 +453,15 @@ with mp_face_mesh.FaceMesh(max_num_faces = 1, refine_landmarks = True, min_detec
                             opening_velocities[-1] = max(opening_velocities[-1], physics["peak_opening_velocity"])
                             pause_durations[-1] += physics["pause_duration"]
                             blink_amplitudes[-1] = max(blink_amplitudes[-1], physics["amplitude"])
-                            symmetry_ratios[-1] = (symmetry_ratios[-1] + physics["symmetry_ratio"]) / 2
+                            
+                            # Use the correct list names and physics keys
+                            vel_symmetry[-1] = (vel_symmetry[-1] + physics["velocity_symmetry"]) / 2
+                            dur_symmetry[-1] = (dur_symmetry[-1] + physics["duration_symmetry"]) / 2
+                            
+                            # Update velocities and durations used in averages
+                            spline_peak_velocities[-1] = max(spline_peak_velocities[-1], abs(physics["peak_closing_velocity"]))
+                            closing_times[-1] += physics["closing_dur"]
+                            opening_times[-1] += physics["opening_dur"]
                         else:
                             # NEW BLINK RECORDING
                             blink_durations.append(physics["duration"])
@@ -470,10 +475,15 @@ with mp_face_mesh.FaceMesh(max_num_faces = 1, refine_landmarks = True, min_detec
                             inst_rate = 60 / gap_duration if gap_duration > 0 else 0
                             instantaneous_rates.append(inst_rate)
 
+                            closing_velocities.append(physics["peak_closing_velocity"])
                             opening_velocities.append(physics["peak_opening_velocity"])
                             pause_durations.append(physics["pause_duration"])
                             blink_amplitudes.append(physics["amplitude"])
-                            symmetry_ratios.append(physics["symmetry_ratio"])
+                            vel_symmetry.append(physics["velocity_symmetry"])
+                            dur_symmetry.append(physics["duration_symmetry"])
+                            closing_times.append(physics["closing_dur"])
+                            opening_times.append(physics["opening_dur"])
+
 
                             total_mins = (physics["end_ts_precise"] - start_time) / 60.0
                             cumulative_rates.append(len(blink_durations) / total_mins if total_mins > 0 else 0)
@@ -524,22 +534,22 @@ total_time = end_time - start_time
 #Blink Summary
 if blink_count > 0:
     # Ensure all lists match the same length (protects against list mismatch errors)
-    min_length = min(len(blink_durations), 
-                     len(intersaltatory_intervals), 
-                     len(spline_peak_velocities), 
-                     len(cumulative_rates))
+    min_length = len(blink_durations)
     
     blink_rate = blink_count/total_time
 
     report_dict = {
         'Blink ID': range(1, min_length + 1),
         'Duration (ms)': [d*1000 for d in blink_durations[:min_length]],
-        'Bottom Pause (ms)': [d*1000 for d in pause_durations[:min_length]],           # NEW: PD specific
-        'Closing Velocity': spline_peak_velocities[:min_length],
-        'Opening Velocity': opening_velocities[:min_length],                           # NEW: PD specific
-        'Symmetry Ratio': symmetry_ratios[:min_length],                                # New: PD specific
-        'Blink Amplitude': blink_amplitudes[:min_length],                              # NEW: PD specific
-        'Time since last (s)': intersaltatory_intervals[:min_length],
+        'Bottom Pause (ms)': [d*1000 for d in pause_durations[:min_length]],           #NEW
+        'Closing Dur (ms)': [d*1000 for d in closing_times[:min_length]],         #new
+        'Dur Symmetry': dur_symmetry[:min_length],
+        'Opening Dur (ms)': [d*1000 for d in opening_times[:min_length]],         #new
+        'Closing Vel (EAR/ms)': spline_peak_velocities[:min_length],
+        'Opening Vel (EAR/ms)': opening_velocities[:min_length],                           #NEW
+        'Vel Symmetry': vel_symmetry[:min_length],                                #New
+        'Amplitude (EAR)' : blink_amplitudes[:min_length],                              #NEW
+        #'Time since last (s)': intersaltatory_intervals[:min_length]
         #'Closing Phase (ms)': [d*1000 for d in closing_durations[:min_length]],
         #'Peak Acceleration': spline_peak_accelerations[:min_length],
         #'Min EAR Closure': all_min_EARs[:min_length]
@@ -557,37 +567,46 @@ if blink_count > 0:
     print(f"Refined Peak Velocity: {avg_peak_velocity} units/sec")
 
 
-#Enough blinks to be safe
-if len(blink_durations) >= 5:
-    #Use the last 10 blinks (or all if less than 10) for the most current state
-    window = min(len(blink_durations),10)
-    recent_durations = [d * 1000 for d in blink_durations[-window:]] 
-    recent_rates = instantaneous_rates[-window:]
-    
-    #Calculate the inputs for ML Model
-    avg_dur = np.mean(recent_durations)
-    avg_rate = np.mean(recent_rates)
-    
-    # Run the Predictor
-    det_clues = pd.DataFrame([[avg_rate, avg_dur]], columns=['Blink Rate (bpm)', 'Blink Duration (ms)'])
-    scld_det_clues = det_scaler.transform(det_clues)
-    possibility = det_model.predict_proba(scld_det_clues)
-    
 
-    print(f"Final Probability: {round(possibility[0][1]*100, 2)}%")
 
-    #Statistical Significance (The Correlation Check)
-    if len(blink_durations) >= 8:
+
+
+#Still need to add the weightings
+
+# --- MERGED FINAL CLINICAL REPORT ---
+
+# --- FIXED CLINICAL REPORT SECTION ---
+if os.path.exists('report.csv'):
+    df_results = pd.read_csv('report.csv')
+    
+    if not df_results.empty:
+        # Calculate means using the EXACT names defined in report_dict
+        avg_rate = (blink_count / total_time) * 60
+        avg_dur = df_results['Duration (ms)'].mean()
+        avg_amp = df_results['Amplitude (EAR)'].mean()
+        avg_c_vel = df_results['Closing Vel (EAR/ms)'].mean()
+        avg_o_vel = df_results['Opening Vel (EAR/ms)'].mean()
+        avg_c_dur = df_results['Closing Dur (ms)'].mean()
+        avg_o_dur = df_results['Opening Dur (ms)'].mean()
+        avg_pause = df_results['Bottom Pause (ms)'].mean()
+        avg_v_sym = df_results['Vel Symmetry'].mean()
+        avg_d_sym = df_results['Dur Symmetry'].mean()
+
+        #Macro Model
+        det_input = pd.DataFrame([[avg_rate, avg_dur]], 
+                                 columns=['Blink Rate (bpm)', 'Blink Duration (ms)'])
+        scld_det = det_scaler.transform(det_input)
+        prob_rate_dur = det_model.predict_proba(scld_det)[0][1]
+
+        #Micro Model
+        avg_features = [baseline_ear, avg_amp, avg_c_vel, avg_o_vel, avg_c_dur, avg_o_dur, avg_pause, avg_v_sym, avg_d_sym]
         
-        # We correlate the last 15 blinks to see the immediate trend
-        corr, p_val = pearsonr(instantaneous_rates[-15:], blink_durations[-15:])
-        
-        print(f"Correlation (Rate vs Duration): {round(corr, 3)}")
-        if p_val < 0.05:
-            print(" Statistical Significance (Valid Trend)")
-        else:
-            print("Trend is not yet statistically significant.")
-else:
-    print("Session too short")
+        #Clinical Prediction
+        clinical_cols = ['Baseline', 'Amplitude', 'Closing Vel', 'Opening Vel', 'Closing Dur', 'Opening Dur', 'Pause Time', 'Vel Symmetry', 'Dur Symmetry']
+        clinical_input = pd.DataFrame([avg_features], columns=clinical_cols)
 
+        scld_clinical = diag_scaler.transform(clinical_input)
+        prob_clinical = diag_model.predict_proba(scld_clinical)[0][1]
 
+        #Output
+        print(f"Total Blinks: {len(df_results)} | Risk Score: {((prob_rate_dur + prob_clinical)/2)*100:.1f}%")

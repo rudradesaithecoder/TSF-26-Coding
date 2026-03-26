@@ -9,3 +9,8 @@
                 else:
                     current_velocity = 0
                     crnt_acceleration = 0'''
+
+import os
+
+if os.path.exists('clinical__training.csv'):
+    os.remove('clinical__training.csv')

@@ -3,12 +3,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 import csv
-
+'''
+#Model 1 data file
 #Value for mm average
 mm_val = 9.0
 
-if os.path.exists('clinical__training.csv'):
-    os.remove('clinical__training.csv')
+if os.path.exists('clinical_training.csv'):
+    os.remove('clinical_training.csv')
 
 def get_log_params(mean, std):
     variance = std**2
@@ -80,9 +81,12 @@ patients = int(input("Enter number of patients to create data: "))
 blinks = int(input("Enter desired number of blinks per patient: "))
 
 df = generate_full_clinical_data(patients, blinks)
-df.to_csv('clinical__training.csv', index=False)
+df = df.sample(frac=1, random_state=42).reset_index(drop=True)
+df.to_csv('clinical_training.csv', index=False)'''
+
 
 '''
+#Model for blinking (spontaneous)
 def get_params(mean, std):
     # Calculate sigma for log-space
     sigma = np.sqrt(np.log(1 + (std**2 / mean**2)))
@@ -103,7 +107,7 @@ hc_rate_mu, hc_rate_sigma = get_params(hc_rate_mean, hc_rate_std)
 hc_dur_mu, hc_dur_sigma = get_params(hc_dur_mean, hc_dur_std)
 
 
-corr = -0.228
+corr = -0.233
 pd_rate_mean = 15.28 #Based on Vasudevan
 pd_rate_std = 8.92 #based on Vasudevan
 pd_dur_mean = 63.25 #Based on Vasudevan
@@ -156,6 +160,86 @@ print(f"PD Corr: {df[df['Label']==1].corr().iloc[0,1]}")
 df = df.sample(frac=1, random_state=42).reset_index(drop=True)
 df.to_csv('PatientsFile2.csv', index=False)'''
 
+
+# Model for Voluntary Blinking Data
+mm_val = 9.0
+
+if os.path.exists('voluntary_clinical_training.csv'):
+    os.remove('voluntary_clinical_training.csv')
+
+def get_log_params(mean, std):
+    variance = std**2
+    mu = np.log(mean**2 / np.sqrt(variance + mean**2))
+    sigma = np.sqrt(np.log(1 + (variance / mean**2)))
+    return mu, sigma
+
+def generate_voluntary_clinical_data(num_people=200, blinks_per_person=20):
+    rows = []
+    
+    # Kinematic values based on Table 2 for Voluntary Blinking 
+    # Healthy: Close Vel 340.1, Open Vel 154.1, Amp 12.4mm, Pause 44.2ms
+    # PD (OFF): Close Vel 321.6, Open Vel 150.3, Amp 11.4mm, Pause 135.1ms
+    
+    for i in range(num_people):
+        is_pd = np.random.choice([0, 1])
+        subj_baseline = np.random.uniform(0.28, 0.45) 
+        
+        if is_pd == 0:
+            # HEALTHY CONTROLS 
+            c_vel_m, c_vel_s = get_log_params(340.1, 20.1)
+            o_vel_m, o_vel_s = get_log_params(154.1, 8.3)
+            amp_m, amp_s     = get_log_params(12.4, 0.6)
+            c_dur_m, c_dur_s = get_log_params(70.8, 3.4)
+            o_dur_m, o_dur_s = get_log_params(168.5, 12.6)
+            pause_m, pause_s = get_log_params(44.2, 7.6)
+        else:
+            # PD (OFF THERAPY) 
+            # Note: Vel and Amp are similar to controls, but Pause is significantly higher.
+            c_vel_m, c_vel_s = get_log_params(321.6, 27.2)
+            o_vel_m, o_vel_s = get_log_params(150.3, 15.8)
+            amp_m, amp_s     = get_log_params(11.4, 0.8)
+            c_dur_m, c_dur_s = get_log_params(75.2, 5.1)
+            o_dur_m, o_dur_s = get_log_params(195.3, 16.5)
+            pause_m, pause_s = get_log_params(135.1, 27.3) # Significant bradykinesia [cite: 361]
+
+        for _ in range(blinks_per_person):
+            raw_c_vel = np.random.lognormal(c_vel_m, c_vel_s)
+            raw_o_vel = np.random.lognormal(o_vel_m, o_vel_s)
+            raw_amp   = np.random.lognormal(amp_m, amp_s)
+            c_dur     = np.random.lognormal(c_dur_m, c_dur_s)
+            o_dur     = np.random.lognormal(o_dur_m, o_dur_s)
+            pause     = np.random.lognormal(pause_m, pause_s)
+
+            # SCALE TO EAR
+            amp_ear = (raw_amp / mm_val) * subj_baseline
+            c_vel_ear = (raw_c_vel / mm_val) * subj_baseline
+            o_vel_ear = (raw_o_vel / mm_val) * subj_baseline
+            
+            vel_symmetry = o_vel_ear / c_vel_ear if c_vel_ear != 0 else 1
+            dur_symmetry = o_dur / c_dur if c_dur != 0 else 1
+
+            rows.append({
+                'Baseline': subj_baseline,
+                'Amplitude': amp_ear,
+                'Closing Vel': c_vel_ear,
+                'Opening Vel': o_vel_ear,
+                'Closing Dur': c_dur,
+                'Opening Dur': o_dur,
+                'Pause Time': pause,
+                'Vel Symmetry': vel_symmetry,
+                'Dur Symmetry': dur_symmetry,
+                'Label': is_pd
+            })
+            
+    return pd.DataFrame(rows)
+
+# Input and Execution
+patients = int(input("Enter number of patients to create voluntary data: "))
+blinks = int(input("Enter desired number of blinks per patient: "))
+
+df = generate_voluntary_clinical_data(patients, blinks)
+df = df.sample(frac=1, random_state=42).reset_index(drop=True)
+df.to_csv('voluntary_clinical_training.csv', index=False)
 
 
 

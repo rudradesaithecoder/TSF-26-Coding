@@ -1,66 +1,103 @@
 import pandas as pd
 import numpy as np
 import joblib
+import xgboost as xgb
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
-import xgboost as xgb
+from sklearn.metrics import classification_report, roc_auc_score, accuracy_score
 
-# 1. Load and Feature Engineering
-df = pd.read_csv('PatientsFile2.csv')
-df['Blink_Ratio'] = df['Blink Rate (bpm)'] / df['Blink Duration (ms)']
-df['Blink_Product'] = df['Blink Rate (bpm)'] * df['Blink Duration (ms)']
 
-X = df[['Blink Rate (bpm)', 'Blink Duration (ms)', 'Blink_Ratio', 'Blink_Product']]
+#Load the Clinical Training Data
+df = pd.read_csv('voluntary_clinical_training_humanoid.csv')
+
+# These must exactly match your CSV column names
+features = ['Baseline', 'Amplitude', 'Closing Vel', 'Opening Vel', 
+            'Closing Dur', 'Opening Dur', 'Pause Time', 
+            'Vel Symmetry', 'Dur Symmetry']
+
+X = df[features]
 y = df['Label']
 
-# 2. The "Three-Way" Split
-# First, split into Training (80%) and Test (20%)
-X_temp, X_test, y_temp, y_test = train_test_split(X, y, test_size=0.20, stratify=y, random_state=42)
+#Split and Scale
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
 
-# Second, split Training into actual Train (90% of 80%) and Validation (10% of 80%)
-# The Validation set is the 'exam' the AI uses to grade itself via AUC
-X_train, X_val, y_train, y_val = train_test_split(X_temp, y_temp, test_size=0.10, stratify=y_temp, random_state=42)
-
-# 3. Scaling (Crucial: Scale all three sets)
 scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
-X_val_scaled = scaler.transform(X_val)
 X_test_scaled = scaler.transform(X_test)
 
-# 4. Pro XGBoost Model with AUC
+#Clinical XGBoost Model
+# We use scale_pos_weight to help the AI "care" more about the PD cases
+counter = y.value_counts()
+ratio = counter[0] / counter[1]
+
 model = xgb.XGBClassifier(
-    n_estimators=1000,           # More trees, but early stopping will cut it short
-    max_depth=6,                # Big picture thinking
-    learning_rate=0.1,         # Slow and steady learning
-    gamma=1,                    # Only split if it's a good move
-    subsample=0.8,              # Randomly use 80% of rows to prevent memorization
-    colsample_bytree=0.8,       # Randomly use 80% of features      
-    eval_metric='auc',          # THE CHANGE: Grading based on AUC
-    early_stopping_rounds=25,   # Stop if AUC doesn't improve for 15 trees 
+    n_estimators=500,
+    max_depth=4,
+    learning_rate=0.05,
+    scale_pos_weight=ratio, 
+    eval_metric='auc',
     random_state=42
 )
 
-# 5. Fitting with Early Stopping
-model.fit(
-    X_train_scaled, y_train,
-    eval_set=[(X_val_scaled, y_val)],
-    verbose=True                # Watch the AUC climb in the console
+model.fit(X_train_scaled, y_train)
+prediction = model.predict(X_test_scaled)
+
+#Save the Clinical Models
+joblib.dump(model, 'vol_clinical_diagnosis_model.pkl')
+joblib.dump(scaler, 'vol_clinical_scaler.pkl')
+
+print("Clinical Model Trained Successfully.")
+print(f"Test AUC: {roc_auc_score(y_test, model.predict_proba(X_test_scaled)[:, 1]):.4f}")
+
+print("Classification Report:")
+print(classification_report(y_test, prediction))
+
+print(f'{accuracy_score(y_test, prediction)*100:.2f}%')
+
+'''
+#Model 2
+
+
+df = pd.read_csv('ImprovedPatientsFile2.csv')
+
+
+features = ['Blink Rate (bpm)', 'Blink Duration (ms)']
+
+X = df[features]
+y = df['Label']
+
+# 3. Split and Scale
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
+
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+#Blink Rate XGBoost Model
+counter = y.value_counts()
+ratio = counter[0] / counter[1]
+
+model = xgb.XGBClassifier(
+    n_estimators=500,
+    max_depth=4,
+    learning_rate=0.05,
+    scale_pos_weight=ratio, 
+    eval_metric='auc',
+    random_state=42
 )
 
-# 6. Evaluation
-y_probs = model.predict_proba(X_test_scaled)[:, 1]
-custom_threshold = 0.42
-custom_predictions = (y_probs >= custom_threshold).astype(int)
+model.fit(X_train_scaled, y_train)
+prediction = model.predict(X_test_scaled)
 
-# Get the importance by 'gain' specifically
-importance_gain = model.get_booster().get_score(importance_type='gain')
-print("Feature Importance by GAIN:", importance_gain)
+#Save
+joblib.dump(model, 'rate_duration_model.pkl')
+joblib.dump(scaler, 'rate_duration_scaler.pkl')
 
-print("\n--- Final Results ---")
-print(f"Total Model AUC Score: {roc_auc_score(y_test, y_probs):.4f}")
-print(f"Classification Report (Threshold {custom_threshold}):")
-print(classification_report(y_test, custom_predictions, target_names=['Healthy', 'PD Risk']))
+#Performance Report
+print("Blink Rate/Duration Model Trained Successfully.")
+print(f"Test AUC: {roc_auc_score(y_test, model.predict_proba(X_test_scaled)[:, 1]):.4f}")
 
-print("Confusion Matrix:")
-print(confusion_matrix(y_test, custom_predictions))
+print("\nClassification Report:")
+print(classification_report(y_test, prediction))
+
+print(f"Overall Accuracy: {accuracy_score(y_test, prediction)*100:.2f}%")'''
