@@ -61,8 +61,8 @@ print(classification_report(y_test, predictions, target_names=['Open', 'Blink'])
 print(accuracy_score(y_test, predictions)*100)
 
 #Save and dump the model
-joblib.dump(best_model, 'blink_model_V9_experimental.pkl')
+'''joblib.dump(best_model, 'blink_model_V9_experimental.pkl')
 joblib.dump(scaler, 'scale_model_V9_experimental.pkl')
-print("\nOptimized Model and Scaler saved!")
+print("\nOptimized Model and Scaler saved!")'''
 
 #V8 optimised is the best model 

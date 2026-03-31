@@ -14,6 +14,9 @@ from scipy.stats import pearsonr
 import matplotlib.pyplot as plt
 
 
+#Key function
+mp_face_mesh = mp.solutions.face_mesh
+
 #Importing all the models
 vol_diag_model = joblib.load('vol_clinical_diagnosis_model.pkl')
 vol_scaler = joblib.load('vol_clinical_scaler.pkl')
@@ -24,13 +27,6 @@ model = joblib.load('blink_model_V9_experimental.pkl')
 diag_model = joblib.load('clinical_diagnosis_model.pkl')
 diag_scaler = joblib.load('clinical_scaler.pkl')
 
-'''scaler.feature_names_in_ = None
-model.feature_names_in_ = None
-det_scaler.feature_names_in_ = None
-det_model.feature_names_in_ = None'''
-
-if os.path.exists('report.csv'):
-    os.remove('report.csv')
 
 
 def get_blink_physics_spline(times, values, min_EAR_during_blink, baseline_EAR):
@@ -49,7 +45,7 @@ def get_blink_physics_spline(times, values, min_EAR_during_blink, baseline_EAR):
         peak_idx = np.argmin(hi_res_values)
         peak_ts_precise = hi_res_times[peak_idx]
         
-        diagnostic_threshold = min_EAR_during_blink + 0.85 * (baseline_EAR - min_EAR_during_blink)
+        diagnostic_threshold = min_EAR_during_blink + 0.90 * (baseline_EAR - min_EAR_during_blink)
         below = hi_res_times[hi_res_values <= diagnostic_threshold]
         
         if len(below) < 2: return None # Safety check
@@ -117,8 +113,6 @@ def EARratio(coords):
     EAR = (h1 + h2)/(w*2)
     return EAR
 
-#Two Key functions
-mp_face_mesh = mp.solutions.face_mesh
 
 #Initialising Key Values
 blinked_frames = 0
@@ -168,6 +162,21 @@ cap = cv2.VideoCapture(0)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 cap.set(cv2.CAP_PROP_FPS, 30)
 '''
+
+# Collect raw data
+actual_fps = cap.get(cv2.CAP_PROP_FPS)
+
+if actual_fps <= 0: actual_fps = 30 
+actual_h = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+
+# Normalize
+resNorm = min(actual_h / 1080, 1.0)
+fpsNorm = min(actual_fps / 60, 1.0)
+
+#Calculate Score
+s_cam = (0.5 * resNorm + 0.5 * fpsNorm)
+print(f"Camera Quality Score: {s_cam:.2f}")
+
 with mp_face_mesh.FaceMesh(max_num_faces = 1, refine_landmarks = True, min_detection_confidence = 0.5, min_tracking_confidence = 0.5) as face_mesh:
     
     #The Light requirements - to be modified
@@ -504,9 +513,9 @@ with mp_face_mesh.FaceMesh(max_num_faces = 1, refine_landmarks = True, min_detec
                           prediction)
 
             #Blink count on screen for debugging
-            cv2.putText(video, str(blink_count), (560, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,0), 2)
+            #cv2.putText(video, str(blink_count), (560, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,0), 2)
         else:
-             cv2.putText(flipped_frame, "FACE NOT FOUND", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)      
+            cv2.putText(flipped_frame, "FACE NOT FOUND", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)      
         
         #Temporary timer
         if time.time() - start_time > 60:
@@ -558,18 +567,6 @@ if blink_count > 0:
     df_report = pd.DataFrame(report_dict)
     df_report.to_csv('report.csv', index=False)
     
-    # Calculate Averages using Spline Values
-    avg_peak_velocity = round(np.mean(spline_peak_velocities), 3)
-    avg_blink = round(np.mean(blink_durations), 5)
-    
-    print(f"Average Blink Rate: {(blink_count / (end_time - start_time)) * 60:.2f} blinks/min")
-    print(f"Precise Average Duration: {avg_blink*1000:.2f} ms")
-    print(f"Refined Peak Velocity: {avg_peak_velocity} units/sec")
-
-
-
-
-
 
 #Still need to add the weightings
 
@@ -577,8 +574,29 @@ if blink_count > 0:
 
 # --- FIXED CLINICAL REPORT SECTION ---
 if os.path.exists('report.csv'):
-    df_results = pd.read_csv('report.csv')
+    df = pd.read_csv('report.csv')
+    initial_rows = len(df)
+
+    df_results = df[
+    #Timing Constraints
+    (df['Duration (ms)'] > 30) & (df['Duration (ms)'] < 250) & 
+    (df['Bottom Pause (ms)'] < 200) &
     
+    #Kinematic Sanity (Velocity vs Amplitude)
+    # Closing velocity should be significantly higher than 0 for a real blink
+    (df['Closing Vel (EAR/ms)'] > 0.002) & 
+    (df['Amplitude (EAR)'] > 0.05) &
+    
+    #Symmetry Sanity (Avoid 'teleporting' eyelid artifacts)
+    (df['Vel Symmetry'] > 0.15) & (df['Vel Symmetry'] < 5.0) &
+    (df['Dur Symmetry'] > 0.2) & (df['Dur Symmetry'] < 5.0)
+]
+    
+    # Calculating the data removed
+    final_rows = len(df_results)
+    prcnt_removed = round(((initial_rows-final_rows)/initial_rows)*100, 2)
+    print(f"Percentage Data Removed: {prcnt_removed}%")
+
     if not df_results.empty:
         # Calculate means using the EXACT names defined in report_dict
         avg_rate = (blink_count / total_time) * 60
@@ -609,4 +627,4 @@ if os.path.exists('report.csv'):
         prob_clinical = diag_model.predict_proba(scld_clinical)[0][1]
 
         #Output
-        print(f"Total Blinks: {len(df_results)} | Risk Score: {((prob_rate_dur + prob_clinical)/2)*100:.1f}%")
+        print(f"Total Blinks: {len(df_results)} | Risk Score: {((prob_rate_dur + prob_clinical)/2)*100:.2f}%")

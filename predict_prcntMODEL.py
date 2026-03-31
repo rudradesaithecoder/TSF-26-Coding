@@ -8,7 +8,7 @@ from sklearn.metrics import classification_report, roc_auc_score, accuracy_score
 
 
 #Load the Clinical Training Data
-df = pd.read_csv('voluntary_clinical_training_humanoid.csv')
+'''df = pd.read_csv('voluntary_clinical_training_humanoid.csv')
 
 # These must exactly match your CSV column names
 features = ['Baseline', 'Amplitude', 'Closing Vel', 'Opening Vel', 
@@ -40,21 +40,21 @@ model = xgb.XGBClassifier(
 )
 
 model.fit(X_train_scaled, y_train)
-prediction = model.predict(X_test_scaled)
+prediction = model.predict(X_test_scaled)'''
 
-#Save the Clinical Models
+'''#Save the Clinical Models
 joblib.dump(model, 'vol_clinical_diagnosis_model.pkl')
-joblib.dump(scaler, 'vol_clinical_scaler.pkl')
+joblib.dump(scaler, 'vol_clinical_scaler.pkl')'''
 
-print("Clinical Model Trained Successfully.")
+'''print("Clinical Model Trained Successfully.")
 print(f"Test AUC: {roc_auc_score(y_test, model.predict_proba(X_test_scaled)[:, 1]):.4f}")
 
 print("Classification Report:")
 print(classification_report(y_test, prediction))
 
-print(f'{accuracy_score(y_test, prediction)*100:.2f}%')
+print(f'{accuracy_score(y_test, prediction)*100:.2f}%')'''
 
-'''
+
 #Model 2
 
 
@@ -89,9 +89,9 @@ model = xgb.XGBClassifier(
 model.fit(X_train_scaled, y_train)
 prediction = model.predict(X_test_scaled)
 
-#Save
+'''#Save
 joblib.dump(model, 'rate_duration_model.pkl')
-joblib.dump(scaler, 'rate_duration_scaler.pkl')
+joblib.dump(scaler, 'rate_duration_scaler.pkl')'''
 
 #Performance Report
 print("Blink Rate/Duration Model Trained Successfully.")
@@ -100,4 +100,5 @@ print(f"Test AUC: {roc_auc_score(y_test, model.predict_proba(X_test_scaled)[:, 1
 print("\nClassification Report:")
 print(classification_report(y_test, prediction))
 
-print(f"Overall Accuracy: {accuracy_score(y_test, prediction)*100:.2f}%")'''
+print(f"Overall Accuracy: {accuracy_score(y_test, prediction)*100:.2f}%")
+

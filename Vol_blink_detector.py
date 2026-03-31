@@ -507,7 +507,7 @@ with mp_face_mesh.FaceMesh(max_num_faces = 1, refine_landmarks = True, min_detec
             #Blink count on screen for debugging
             cv2.putText(video, str(blink_count), (560, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,0), 2)
         else:
-             cv2.putText(flipped_frame, "FACE NOT FOUND", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)      
+             cv2.putText(video, "FACE NOT FOUND", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)      
         
         #Temporary timer
         if time.time() - start_time > 60:
@@ -565,7 +565,23 @@ if blink_count > 0:
 
 # --- FIXED CLINICAL REPORT SECTION ---
 if os.path.exists('report.csv'):
-    df_results = pd.read_csv('report.csv')
+    # Data access
+    df = pd.read_csv('report.csv')
+    initial_rows = len(df)
+    
+    # Heuristic Data Removal
+    df_results = df[                      # Eliminates impossible blinks
+    (df['Bottom Pause (ms)'] < 250) &     # Remove blinks that stayed closed > 0.25s
+    (df['Duration (ms)'] > 30) &          # Remove "Micro-jitters" < 80ms
+    (df['Amplitude (EAR)'] > 0.05) &      # Remove tiny twitches
+    (df['Closing Vel (EAR/ms)'] > 1.0) &  # Remove teleporting eyelid errors
+    (df['Duration (ms)'] < 250)           # Remove extremely large duration values
+    
+]
+    # Calculating the data removed
+    final_rows = len(df_results)
+    prcnt_removed = round(((initial_rows-final_rows)/initial_rows)*100, 2)
+    print(f"Percentage Data Removed: {prcnt_removed}%")
     
     if not df_results.empty:
         # Calculate means using the EXACT names defined in report_dict

@@ -162,7 +162,7 @@ df.to_csv('PatientsFile2.csv', index=False)'''
 
 
 # Model for Voluntary Blinking Data
-mm_val = 9.0
+'''mm_val = 9.0
 
 if os.path.exists('voluntary_clinical_training.csv'):
     os.remove('voluntary_clinical_training.csv')
@@ -239,7 +239,7 @@ blinks = int(input("Enter desired number of blinks per patient: "))
 
 df = generate_voluntary_clinical_data(patients, blinks)
 df = df.sample(frac=1, random_state=42).reset_index(drop=True)
-df.to_csv('voluntary_clinical_training.csv', index=False)
+df.to_csv('voluntary_clinical_training.csv', index=False)'''
 
 
 

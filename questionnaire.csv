@@ -1,0 +1,49 @@
+sleep,time_of_day,age_group,REM Sleep Behavior Disorder,Loss of smell,Slow movement/rigidity,Balance issues,Constipation,Constant anxiety/depression,Tremors,Dopamine-blocking drugs
+8+,Afteroon,<55,0,0,1,1,0,1,0,0
+6-8,Afteroon,<55,0,0,1,1,0,0,0,0
+8+,Morning,>=55,0,0,1,1,1,0,0,0
+7-9 Hours,Afternoon (12-6PM),Younger than 50 Years,0,0,0,0,0,1,1,0
+7-9 Hours,Afternoon (12-6PM),Younger than 50 Years,0,1,0,0,1,0,0,0
+6-7 Hours,Afternoon (12-6PM),50-59,1,1,0,0,0,1,0,0
+6-7 Hours,Afternoon (12-6PM),50-59,1,1,0,0,0,1,0,0
+6-7 Hours,Afternoon (12-6PM),50-59,1,1,0,0,0,1,0,0
+6-7 Hours,Afternoon (12-6PM),50-59,1,1,0,0,0,1,0,0
+6-7 Hours,Afternoon (12-6PM),50-59,1,1,0,0,0,1,0,0
+6-7 Hours,Afternoon (12-6PM),50-59,1,1,0,0,0,1,0,0
+6-7 Hours,Afternoon (12-6PM),50-59,1,1,0,0,0,1,0,0
+6-7 Hours,Afternoon (12-6PM),50-59,1,1,0,0,0,1,0,0
+6-7 Hours,Afternoon (12-6PM),50-59,1,1,0,0,0,1,0,0
+6-7 Hours,Afternoon (12-6PM),50-59,1,1,0,0,0,1,0,0
+6-7 Hours,Afternoon (12-6PM),50-59,1,1,0,0,0,1,0,0
+6-7 Hours,Afternoon (12-6PM),50-59,1,1,0,0,0,1,0,0
+6-7 Hours,Afternoon (12-6PM),50-59,1,1,0,0,0,1,0,0
+6-7 Hours,Afternoon (12-6PM),50-59,1,1,0,0,0,1,0,0
+6-7 Hours,Afternoon (12-6PM),50-59,1,1,0,0,0,1,0,0
+6-7 Hours,Afternoon (12-6PM),50-59,1,1,0,0,0,1,0,0
+6-7 Hours,Afternoon (12-6PM),50-59,1,1,0,0,0,1,0,0
+6-7 Hours,Afternoon (12-6PM),50-59,1,1,0,0,0,1,0,0
+6-7 Hours,Afternoon (12-6PM),50-59,1,1,0,0,0,1,0,0
+6-7 Hours,Afternoon (12-6PM),50-59,1,1,0,0,0,1,0,0
+6-7 Hours,Afternoon (12-6PM),50-59,1,1,0,0,0,1,0,0
+Less than 5 Hours,Morning (8-12),60-69,0,1,0,0,0,1,0,0
+Eye strain,Less than 5 Hours,Morning (8-12),Younger than 50 Years,0,0,0,0,1,0,0,0,0
+Eye strain,Less than 5 Hours,Morning (8-12),Younger than 50 Years,0,0,0,0,1,0,0,0,0
+Eye strain,5-6 Hours,Morning (8-12),Younger than 50 Years,0,0,0,0,0,0,1,0,0
+Eye strain,5-6 Hours,Morning (8-12),Younger than 50 Years,0,0,0,0,0,0,1,0,0
+Needs Eye-glasses(Far/Short-sightedness)Eye strain,6-7 Hours,Morning (8-12),60-69,0,0,0,0,1,0,0,0,0
+Needs Eye-glasses(Far/Short-sightedness)Eye strain,6-7 Hours,Morning (8-12),60-69,0,0,0,0,1,0,0,0,0
+Needs Eye-glasses(Far/Short-sightedness)Eye strain,Less than 5 Hours,Morning (8-12),50-59,0,0,0,0,1,0,0,0,0
+Needs Eye-glasses(Far/Short-sightedness)Eye strain,Less than 5 Hours,Morning (8-12),50-59,0,0,0,0,1,0,0,0,0
+Facial Tics,6-7 Hours,Morning (8-12),50-59,0,1,0,0,0,0,1,0,0
+Facial Tics,6-7 Hours,Morning (8-12),50-59,0,1,0,0,0,0,1,0,0
+Needs Eye-glasses(Far/Short-sightedness)Eye strain,6-7 Hours,Afternoon (12-6PM),50-59,0,0,0,0,1,0,0,0,0
+Needs Eye-glasses(Far/Short-sightedness)Eye strain,6-7 Hours,Afternoon (12-6PM),50-59,0,0,0,0,1,0,0,0,0
+Corneal Abrasion,6-7 Hours,Afternoon (12-6PM),50-59,0,0,0,0,1,0,0,0,0
+Corneal Abrasion,6-7 Hours,Afternoon (12-6PM),50-59,0,0,0,0,1,0,0,0,0
+Facial Tics,7-9 Hours,Afternoon (12-6PM),60-69,1.0,4.35,0,0,0,0,0,0,1,0,0
+Dry Eye Syndrome,Less than 5 Hours,Morning (8-12),Younger than 50 Years,0.0,0.0,0,0,0,0,0,0,0,0,0
+Needs Eye-glasses(Far/Short-sightedness),5-6 Hours,Morning (8-12),60-69,1.0,4.35,0,0,0,0,0,0,1,0,0
+Needs Eye-glasses(Far/Short-sightedness),7-9 Hours,Morning (8-12),Select option,0.0,0.0,0,0,0,0,0,0,1,0,0
+Needs Eye-glasses(Far/Short-sightedness),5-6 Hours,Afternoon (12-6PM),Younger than 50 Years,0.0,0.0,0,0,0,0,0,0,0,0,0
+Needs Eye-glasses(Far/Short-sightedness),6-7 Hours,Afternoon (12-6PM),70-79,1.5,6.52,0,0,0,0,0,0,1,0,0
+None,Less than 5 Hours,Afternoon (12-6PM),Younger than 50 Years,-1.0,0.0,0,0,0,0,0,0,0,1,0
