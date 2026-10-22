@@ -20,15 +20,15 @@ def get_log_params(mean, std):
 def generate_full_clinical_data(num_people=200, blinks_per_person=20):
     rows = []
     
-    # Healthy: Close Vel 189.2, Open Vel 102.6, Amp 7.4mm, Close Dur 69.8ms, Open Dur 190.7ms
-    # PD (OFF): Close Vel 91.9, Open Vel 54.3, Amp 3.7mm, Close Dur 69.9ms, Open Dur 194.5ms
+    #healthy: close vel 189.2, open vel 102.6, amp 7.4mm, close dur 69.8ms, open dur 190.7ms
+    # PD (OFF): close 91.9, open 54.3, amp 3.7mm, close dur 69.9ms, open dur 194.5ms
     
     for i in range(num_people):
         is_pd = np.random.choice([0, 1])
         subj_baseline = np.random.uniform(0.28, 0.45) # Random eye size
         
         if is_pd == 0:
-            # HEALTHY DISTRIBUTIONS
+            #healthy
             c_vel_m, c_vel_s = get_log_params(189.2, 40)
             o_vel_m, o_vel_s = get_log_params(102.6, 25)
             amp_m, amp_s = get_log_params(7.4, 1.5)
@@ -36,7 +36,7 @@ def generate_full_clinical_data(num_people=200, blinks_per_person=20):
             o_dur_m, o_dur_s = get_log_params(190.7, 40)
             pause_m, pause_s = get_log_params(44.2, 10)
         else:
-            # PD DISTRIBUTIONS (Slower, Smaller, Asymmetric)
+            #parkinsons
             c_vel_m, c_vel_s = get_log_params(91.9, 30)
             o_vel_m, o_vel_s = get_log_params(54.3, 15)
             amp_m, amp_s = get_log_params(3.7, 1.2)
@@ -45,7 +45,6 @@ def generate_full_clinical_data(num_people=200, blinks_per_person=20):
             pause_m, pause_s = get_log_params(135.1, 40)
 
         for _ in range(blinks_per_person):
-            # Generate raw physics (mm and ms)
             raw_c_vel = np.random.lognormal(c_vel_m, c_vel_s)
             raw_o_vel = np.random.lognormal(o_vel_m, o_vel_s)
             raw_amp = np.random.lognormal(amp_m, amp_s)
@@ -53,12 +52,12 @@ def generate_full_clinical_data(num_people=200, blinks_per_person=20):
             o_dur = np.random.lognormal(o_dur_m, o_dur_s)
             pause = np.random.lognormal(pause_m, pause_s)
 
-            # --- SCALE TO EAR ---
+            
             amp_ear = (raw_amp / mm_val) * subj_baseline
             c_vel_ear = (raw_c_vel / mm_val) * subj_baseline
             o_vel_ear = (raw_o_vel / mm_val) * subj_baseline
             
-            # --- CALCULATE SYMMETRY RATIOS  ---
+            
             vel_symmetry = o_vel_ear / c_vel_ear if c_vel_ear != 0 else 1
             dur_symmetry = o_dur / c_dur if c_dur != 0 else 1
 
@@ -177,15 +176,15 @@ def generate_voluntary_clinical_data(num_people=200, blinks_per_person=20):
     rows = []
     
     # Kinematic values based on Table 2 for Voluntary Blinking 
-    # Healthy: Close Vel 340.1, Open Vel 154.1, Amp 12.4mm, Pause 44.2ms
-    # PD (OFF): Close Vel 321.6, Open Vel 150.3, Amp 11.4mm, Pause 135.1ms
+    #healthy: close vel 340.1, open vel 154.1, amp 12.4mm, pause 44.2ms
+    #PD: close vel 321.6, open vel 150.3, amp 11.4mm, pause 135.1ms
     
     for i in range(num_people):
         is_pd = np.random.choice([0, 1])
         subj_baseline = np.random.uniform(0.28, 0.45) 
         
         if is_pd == 0:
-            # HEALTHY CONTROLS 
+            #healthy
             c_vel_m, c_vel_s = get_log_params(340.1, 20.1)
             o_vel_m, o_vel_s = get_log_params(154.1, 8.3)
             amp_m, amp_s     = get_log_params(12.4, 0.6)
@@ -193,7 +192,7 @@ def generate_voluntary_clinical_data(num_people=200, blinks_per_person=20):
             o_dur_m, o_dur_s = get_log_params(168.5, 12.6)
             pause_m, pause_s = get_log_params(44.2, 7.6)
         else:
-            # PD (OFF THERAPY) 
+            #PD 
             # Note: Vel and Amp are similar to controls, but Pause is significantly higher.
             c_vel_m, c_vel_s = get_log_params(321.6, 27.2)
             o_vel_m, o_vel_s = get_log_params(150.3, 15.8)
@@ -210,7 +209,7 @@ def generate_voluntary_clinical_data(num_people=200, blinks_per_person=20):
             o_dur     = np.random.lognormal(o_dur_m, o_dur_s)
             pause     = np.random.lognormal(pause_m, pause_s)
 
-            # SCALE TO EAR
+            
             amp_ear = (raw_amp / mm_val) * subj_baseline
             c_vel_ear = (raw_c_vel / mm_val) * subj_baseline
             o_vel_ear = (raw_o_vel / mm_val) * subj_baseline
@@ -245,20 +244,20 @@ df.to_csv('voluntary_clinical_training.csv', index=False)'''
 
 '''import pandas as pd
 
-# 1. Load your master training data
+#load master training data
 df = pd.read_csv('refined_training_data.csv')
 
-# 2. Define the "Gold Standard" thresholds
+#define thresholds
 V_THRESH = 5.0
 A_THRESH = 100.0
 
-# 3. Group contiguous frames into unique 'events'
+#group contiguous frames into unique 'events'
 df['event_id'] = (df['BlinkLabel'] != df['BlinkLabel'].shift()).cumsum()
 
-# 4. Identify the "Peak Strength" of each blink event
+#identify the peak of blink event
 blink_groups = df[df['BlinkLabel'] == 1].groupby('event_id')
 
-# Map the peak velocity and acceleration reached during each blink back to the main dataframe
+#map the peak velocity and acceleration reached during each blink back to the main dataframe
 df['peak_vel_event'] = blink_groups['Velocity'].transform(lambda x: x.abs().max())
 df['peak_accel_event'] = blink_groups['Acceleration'].transform(lambda x: x.abs().max())
 
