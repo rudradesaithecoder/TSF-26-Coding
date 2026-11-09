@@ -5,62 +5,58 @@ from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKF
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import classification_report, accuracy_score
 
-#Load and Prepare
+#load
 df = pd.read_csv('manually_purified_V2.csv')
 X = df[['EAR_Relative', 'Velocity', 'Acceleration', 'EAR_Prev', 'EAR_Next']]
 y = df['BlinkLabel']
 
-# Use stratify=y to ensure the test set has the same % of blinks as the training set
+#split 25-75
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, stratify=y, random_state=42)
 
 
-#Scale
+#scale importance 
 scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
 
-#Hyperparameter Tuning (The Improvement)
-# We test different 'depths' and 'tree counts' to find the best fit
-#Dictionary used for Grid method for best parameters for randomtree
+#tuning
 param_grid = {
     'n_estimators': [50, 100, 200],
     'max_depth': [5, 10, 15, None],
     'min_samples_split': [2, 5],
-    'class_weight': ['balanced', 'balanced_subsample'] # Crucial for imbalance
+    'class_weight': ['balanced', 'balanced_subsample'] 
 }
-
-# StratifiedKFold ensures every 'fold' has enough blinks to learn from
 cv_strategy = StratifiedKFold(n_splits=5)
 
-#Grid search uses different possibilities of sample splits, class weight, esitmators and max depth
+#grid search method
 grid_search = GridSearchCV(
     estimator=RandomForestClassifier(random_state=42),
     param_grid=param_grid,
     cv=cv_strategy,
-    scoring='f1_macro', # We optimize for F1 (balance of precision/recall) rather than just accuracy
-    n_jobs=-1 # Uses all your CPU cores for speed
+    scoring='f1_macro', #optimised for f1
+    n_jobs=-1 
 )
 
 print("Starting Grid Search Tuning...")
 grid_search.fit(X_train_scaled, y_train)
 
-#Results for best possible option
+
 best_model = grid_search.best_estimator_
 print(f"Best Parameters: {grid_search.best_params_}")
 
-#Print the importance of each factor in AI's decision-making process
+#check feature used most
 importances = best_model.feature_importances_
 for feat, importance in zip(['EAR_Relative', 'Velocity', 'Acceleration', 'EAR_Prev', 'EAR_Next'], importances):
     print(f"Feature '{feat}' Importance: {importance:.4f}")
 
-#Evaluate the model's performance
+#performance score
 predictions = best_model.predict(X_test_scaled)
 print("\nFinal Performance Report:")
 print(classification_report(y_test, predictions, target_names=['Open', 'Blink']))
 
 print(accuracy_score(y_test, predictions)*100)
 
-#Save and dump the model
+
 '''joblib.dump(best_model, 'blink_model_V9_experimental.pkl')
 joblib.dump(scaler, 'scale_model_V9_experimental.pkl')
 print("\nOptimized Model and Scaler saved!")'''

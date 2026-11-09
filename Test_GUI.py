@@ -1,4 +1,4 @@
-# GUI Imports
+#GUI imports
 import tkinter as tk
 from tkinter import ttk
 from PIL import Image, ImageTk
@@ -9,7 +9,7 @@ import time
 import csv
 import os
 
-#Blink Detector Imports
+#internal program imports
 import cv2
 import mediapipe as mp
 import math
@@ -30,7 +30,7 @@ root.geometry("1530x800")
 root.title("EyeDetect")
 root.resizable(False, False)
 
-# ensure the root grid cell grows so stacked pages fill the window
+#fill the window
 root.grid_rowconfigure(0, weight=1)
 root.grid_columnconfigure(0, weight=1)
 
@@ -50,10 +50,7 @@ Results_page = tk.Frame(root)
 for f in (Start_page, Question_page, Calibration_page, QRT_page, RVB_page, Results_page):
     f.grid(row=0, column=0, sticky="nsew")
 
-# -------------------------------------------------
-# Helper functions
-# -------------------------------------------------
-
+#helper functions
 def reset_blink_state():
     global ear_buffer, time_buffer, blink_count, blinked_frames
     global blink_durations, opening_velocities, pause_durations
@@ -96,17 +93,17 @@ score_state = {
     "time_score": None,
     "age_score": None,
 
-    "sbr_score": None,      # spontaneous blink biomarker score
-    "vbr_score": None,      # voluntary blink biomarker score
+    "sbr_score": None,      #spontaneous blink biomarker score
+    "vbr_score": None,      #voluntary blink biomarker score
 
-    "spon_removed": None,   # % removed from spontaneous test
-    "vol_removed": None,    # % removed from voluntary test
+    "spon_removed": None,   #% removed from spontaneous test
+    "vol_removed": None,    #% removed from voluntary test
 
     "dqcs_spon": None,
     "dqcs_vol": None,
     "dqcs_final": None,
 
-    "pdrisk": None,         # final blink biomarker score
+    "pdrisk": None,         #final biomarker score
     "final_score": None
 }
 
@@ -152,8 +149,8 @@ def calculate_psbs():
         3.0 * drug_var.get()
     )
 
-    # Simple scaling to 0-100
-    # 23 is a practical max reference for this version of the score
+    #scaling to 0-100
+    #23 is a practical max reference for this version of the score
     scaled = max(0.0, min(100.0, (raw / 23.0) * 100.0))
 
     return raw, scaled, sleep_score, time_score, age_score
@@ -162,7 +159,6 @@ def calculate_psbs():
 def calculate_dqcs(sleep_score, time_score, camera_score, percent_removed):
     """
     Data Quality / Confounder Score.
-    Higher is better.
     """
     blink_quality = (1.0 - (percent_removed / 100.0)) ** 2
     dqcs = 100.0 * (
@@ -207,47 +203,45 @@ def get_blink_physics_spline(times, values, min_EAR_during_blink, baseline_EAR):
         if len(times_arr) < 4: 
             return None
         
-        # Create the spline
+        #spline creation
         spline = CubicSpline(times_arr, values_arr, bc_type='natural')
         
-        # 1ms Resolution interpolation
+        #virutal 1000fps interpolation
         res = 1000 
         hi_res_times = np.linspace(times_arr[0], times_arr[-1], num=int((times_arr[-1]-times_arr[0])*res))
         hi_res_values = spline(hi_res_times)
         
-        # Calculate Derivatives (Velocity and Acceleration)
+        #differeniated splines (1st and 2nd)
         velocities = spline(hi_res_times, 1)
         accelerations = spline(hi_res_times, 2)
 
-        #Calculating the time at peak
+        #calculating  time at peak
         peak_idx = np.argmin(hi_res_values)
         peak_ts_precise = hi_res_times[peak_idx]
         
-         # --- NEW DIAGNOSTIC THRESHOLDS ---
-        # Capture 85% of the total movement to see the 'slow start' and 'slow finish'
+        
+        #85% of the total movement to see start and finish
         diagnostic_threshold = min_EAR_during_blink + 0.70 * (baseline_EAR - min_EAR_during_blink)
         below = hi_res_times[hi_res_values <= diagnostic_threshold]
         
-        # The 'Pause' threshold: Time spent at the absolute bottom (0.02 range)
-        # PD patients 'stick' at the bottom due to switching delays
+        #pause thresholdat the absolute bottom: 0.02 above min EAR
         pause_threshold = min_EAR_during_blink + 0.02
         at_bottom = hi_res_times[hi_res_values <= pause_threshold]
         pause_duration = (at_bottom[-1] - at_bottom[0]) if len(at_bottom) > 1 else 0
 
-        # --- SYMMETRY LOGIC ---
+        
         start_t = below[0]
         end_t = below[-1]
         
         closing_time = peak_ts_precise - start_t
         opening_time = end_t - peak_ts_precise
         
-        # Avoid division by zero; Ratio = Closing / Opening
-        # Healthy is usually < 1.0 (Opening takes longer). PD often approaches 1.0 or higher.
+        #zero division error 
         symmetry_ratio = closing_time / opening_time if opening_time > 0 else 1.0
         
         duration = below[-1] - below[0] if len(below) > 1 else (times_arr[-1] - times_arr[0])
         
-        # Precise Duration Logic (10% threshold above minimum)
+        #duration adjustment
         strict_threshold = min_EAR_during_blink + 0.10 * (baseline_EAR - min_EAR_during_blink)
         below = hi_res_times[hi_res_values <= strict_threshold]
         
@@ -255,21 +249,21 @@ def get_blink_physics_spline(times, values, min_EAR_during_blink, baseline_EAR):
         
         return {
             "duration": duration,
-            "peak_closing_velocity": np.min(velocities), # Downward stroke
-            "peak_opening_velocity": np.max(velocities), # Upward stroke (Crucial for PD)
-            "pause_duration": pause_duration,            # The 'Switching' Delay
+            "peak_closing_velocity": np.min(velocities), #downward 
+            "peak_opening_velocity": np.max(velocities), #upward stroke
+            "pause_duration": pause_duration,            #main bradykinesia
             "peak_ts_precise": peak_ts_precise,
             "max_acceleration": np.max(np.abs(accelerations)),
             "start_ts_precise": below[0] if len(below) > 0 else times_arr[0],
             "end_ts_precise": below[-1] if len(below) > 0 else times_arr[-1],
-            "amplitude": (baseline_EAR - min_EAR_during_blink), # PD has 'low amplitude'
-            "symmetry_ratio": symmetry_ratio  # Symmetry ratio of opening and clsoing
+            "amplitude": (baseline_EAR - min_EAR_during_blink), 
+            "symmetry_ratio": symmetry_ratio  #ratio of opening is to clsoing
         }
     except:
         return None
 
 
-#Intensity calculator using predefined and well known ITU-R 601 formula
+#intensity calculator using ITU-R 601 
 def get_pixel_intensity(pixel_bgr):
     #unpack pixel_bgr
     b, g, r = pixel_bgr
@@ -290,7 +284,7 @@ def write_to_file(filename, TimeStamp, EAR_Val = 0 , change = 0, velocity = 0, a
         writer = csv.writer(f)
         writer.writerow([TimeStamp, EAR_Val, change,velocity, acceleration,  Blink_Label])
 
-#Timer Starter
+#timer start
 start_time = time.time()
 
 #EAR Calculator 
@@ -301,10 +295,10 @@ def EARratio(coords):
     EAR = (h1 + h2)/(w*2)
     return EAR
 
-#Two Key functions
+#mediapipe begins
 mp_face_mesh = mp.solutions.face_mesh
 
-#Initialising Key Values
+#variables and lists
 blinked_frames = 0
 blink_count = 0
 blink_start = 0
@@ -333,10 +327,10 @@ v_target = 0
 accel_target = 0
 target_ear = 0
 
-# Latest solution idea (Using buffer)
+#buffer idea variables
 ear_buffer = []
 time_buffer = []
-buffer_size = 25 # Store ~0.83 s of data to capture full blink curve
+buffer_size = 25 
 baseline_ear = 0.3
 threshold_start = 0.25
 
@@ -344,9 +338,9 @@ threshold_start = 0.25
 spline_peak_velocities = []
 #spline_peak_accelerations = []
 
-#------------------------------------------------------------------------------------------
-                            # Calibration Recording System
-#------------------------------------------------------------------------------------------
+
+                                                                   # Light Check
+
 
 def start_cali():
     cap = cv2.VideoCapture(0)
@@ -356,7 +350,7 @@ def start_cali():
     '''
     with mp_face_mesh.FaceMesh(max_num_faces = 1, refine_landmarks = True, min_detection_confidence = 0.5, min_tracking_confidence = 0.5) as face_mesh:
         
-        #The Light requirements - to be modified
+        #light requirements - to be modified
         light_crit_low = 40
         light_low = 55
         light_high = 160
@@ -376,7 +370,7 @@ def start_cali():
             flipped_frame = cv2.flip(frame, 1)
             h, w, _ = flipped_frame.shape
 
-            # Convert for MediaPipe
+            #MediaPipe rgb conversion
             rgb_frame = cv2.cvtColor(flipped_frame, cv2.COLOR_BGR2RGB)
             flipped_frame.flags.writeable = False
             results = face_mesh.process(rgb_frame)
@@ -484,7 +478,7 @@ def start_cali():
                     stable = False
 
                 cv2.putText(flipped_frame, alert, (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
-                #Display lightning check
+                #display lightning check
                 
             else:
                 cv2.putText(flipped_frame, "FACE NOT FOUND", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
@@ -504,9 +498,9 @@ def start_cali():
     cap.release()
     cv2.destroyWindow("Lighting Optimisation")
 
-#------------------------------------------------------------------------------------------
-                             # Spontaneous Blink Recording (SBR) System
-#------------------------------------------------------------------------------------------
+
+                                                                                        # Spontaneous Blink Recording (SBR) System
+
 
 def start_spon_br():
 
@@ -656,7 +650,7 @@ def start_spon_br():
     last_blink_end = time.time() 
     prev_frame_time = time.time()
 
-    # Set an initial baseline so the first calculation doesn't divide by zero
+    #divide by zero error
     #if 'baseline_ear' not in locals() or baseline_ear == 0:
     #    baseline_ear = 0.3
 
@@ -667,20 +661,21 @@ def start_spon_br():
     if actual_fps <= 0: actual_fps = 30 
     actual_h = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
 
-    # Normalize
+    #normalising
     resNorm = min(actual_h / 1080, 1.0)
     fpsNorm = min(actual_fps / 60, 1.0)
 
-    #Calculate Score
+    #score
     s_cam = (0.5 * resNorm + 0.5 * fpsNorm)
     print(f"Camera Quality Score: {s_cam:.2f}")
 
 
-    #Using FaceMesh class
+    #FaceMesh class parameters
     with mp_face_mesh.FaceMesh(max_num_faces = 1, refine_landmarks = True, min_detection_confidence = 0.5, min_tracking_confidence = 0.5) as face_mesh:
 
         create_file('blinks.csv')
-        #Video Loop
+
+        #video start
         while cap.isOpened():
 
             #Read video data
@@ -712,34 +707,34 @@ def start_spon_br():
 
                 face_landmark = result.multi_face_landmarks[0]
             
-                #Getting the x and y's of the indexes
+                #getting the x and y's of the indexes
                 R_XYs = [(face_landmark.landmark[r].x, face_landmark.landmark[r].y) for r in right_indexes]
                 L_XYs = [(face_landmark.landmark[l].x, face_landmark.landmark[l].y) for l in left_indexes]
                 
-                #EAR Calculations
+                #EAR calculations
                 avg_EAR = (EARratio(R_XYs) + EARratio(L_XYs)) / 2
 
-                current_time_wall = time.time() #"Master Clock"
+                current_time_wall = time.time() 
                 time_since_start = current_time_wall - start_time
 
                 ear_buffer.append(avg_EAR)
-                time_buffer.append(current_time_wall) # Use the raw wall time here
+                time_buffer.append(current_time_wall) 
                 
-                #Ear buffer list new Method
+                #new buffer method
                 if len(ear_buffer) > buffer_size:
                     ear_buffer.pop(0)
                     time_buffer.pop(0)
 
-                #Time difference (dt)
+                #(dt)
                 current_frame_time = time.time()
                 
-                #Displacement (EAR Delta)
+                #delta EAR
                 del_EAR = avg_EAR - prev_EAR
-                prev_EAR = avg_EAR # Update for next frame
+                prev_EAR = avg_EAR 
 
                 #AI Predictor
                 if len(ear_buffer) >= 3:
-                    #Target is the middle frame (index -2) to allow "Look Ahead" (index -1)
+                    #middle frame(index -2)                 next frame(index -1)
                     target_ear = ear_buffer[-2]
                     prev_ear = ear_buffer[-3]
                     next_ear = ear_buffer[-1]
@@ -747,7 +742,7 @@ def start_spon_br():
                     dt_target = time_buffer[-2] - time_buffer[-3]
                     dt_next = time_buffer[-1] - time_buffer[-2]
                     
-                    #Velocity/Accel for target frame
+                    #vel and acc for target frame
                     v_target = (target_ear - prev_ear) / dt_target if dt_target > 0 else 0
                     v_next = (next_ear - target_ear) / dt_next if dt_next > 0 else 0
                     accel_target = (v_next - v_target) / dt_next if dt_next > 0 else 0
@@ -764,11 +759,11 @@ def start_spon_br():
                     prediction = 0
                     current_prediction_time = current_time_wall
 
-                # Update baseline on open eyes
+                #baseline update
                 if prediction == 0 and len(ear_buffer) > 5:
                     baseline_ear = np.mean(ear_buffer[-5:])
 
-                # --- THE BLINK TRACKER ---
+                # blink tracking
                 if prediction == 1:
                     if blinked_frames == 0:
                         blink_count += 1
@@ -782,11 +777,10 @@ def start_spon_br():
                         min_EAR_in_blink = target_ear
                         time_of_min_ear = current_prediction_time
                 
-                # --- SPLINE PHYSICS ---
+                #extract spline function data
                 else:
                     if blinked_frames > 0:
-                        # Your Splicing Logic: Grab the frames that just occurred
-                        # We add +4 to the slice to ensure the "Opening" phase is fully in the buffer
+                        
                         num_frames = min(blinked_frames + 6, len(ear_buffer)) 
                         blink_times = list(time_buffer)[-num_frames:]
                         blink_EARs = list(ear_buffer)[-num_frames:]
@@ -841,20 +835,20 @@ def start_spon_br():
 
                             last_blink_end = physics["end_ts_precise"]
 
-                        # Reset for next blink
+                        #reset
                         min_EAR_in_blink = 1.0
                         blinked_frames = 0
                 
-                #Fills CSV File
+                #CSV writing
                 write_to_file('blinks.csv', 
                             time_since_start, 
-                            target_ear,      # Log the EAR the AI actually processed
+                            target_ear,      
                             del_EAR, 
-                            v_target,        # Aligned velocity
-                            accel_target,    # Aligned acceleration
+                            v_target,        
+                            accel_target,    
                             prediction)
 
-                #Blink count on screen for debugging
+                #count on screen
                 #cv2.putText(video, str(blink_count), (560, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,0), 2)
             else:
                 cv2.putText(video, "FACE NOT FOUND", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)      
@@ -863,28 +857,27 @@ def start_spon_br():
             if time.time() - start_time > 95:
                 break
 
-            #Closes code when x is pressed
+            #escape key to stop
             if cv2.waitKey(1) & 0xFF == ord('x'):
                 break
 
             #Displays video with mesh
             cv2.imshow("Blink Detection", video)
 
-    #Calculates end time
+    #calculates end time
     end_time = time.time()
 
-    #Neccesary to stop using webcam
+    #stop webcam access
     cap.release()
         
-    #Closes webcam window
+    #close  window
     cv2.destroyAllWindows()
 
-    #Total time calculator
+    #time calculator
     total_time = end_time - start_time
 
-    #Blink Summary
+    
     if blink_count > 0:
-        # Ensure all lists match the same length (protects against list mismatch errors)
         min_length = len(blink_durations)
         
         blink_rate = blink_count/total_time
@@ -906,11 +899,9 @@ def start_spon_br():
         df_report.to_csv('spon_report.csv', index=False)
         
 
-        #Still need to add the weightings
+        
 
-        # --- MERGED FINAL CLINICAL REPORT ---
-
-        # --- FIXED CLINICAL REPORT SECTION ---
+       
         if os.path.exists('spon_report.csv'):
             df = pd.read_csv('spon_report.csv')
             initial_rows = len(df)
@@ -962,26 +953,26 @@ def start_spon_br():
             avg_v_sym = df_results['Vel Symmetry'].mean()
             avg_d_sym = df_results['Dur Symmetry'].mean()
 
-            #Macro Model
+            #old model
             det_input = pd.DataFrame([[avg_rate, avg_dur]], 
                                     columns=['Blink Rate (bpm)', 'Blink Duration (ms)'])
             scld_det = det_scaler.transform(det_input)
             prob_rate_dur = det_model.predict_proba(scld_det)[0][1]
 
-            #Micro Model
+            #new model
             avg_features = [baseline_ear, avg_amp, avg_c_vel, avg_o_vel, avg_c_dur, avg_o_dur, avg_pause, avg_v_sym, avg_d_sym]
             
-            #Clinical Prediction
+            #prediction
             clinical_cols = ['Baseline', 'Amplitude', 'Closing Vel', 'Opening Vel', 'Closing Dur', 'Opening Dur', 'Pause Time', 'Vel Symmetry', 'Dur Symmetry']
             clinical_input = pd.DataFrame([avg_features], columns=clinical_cols)
 
             scld_clinical = diag_scaler.transform(clinical_input)
             prob_clinical = diag_model.predict_proba(scld_clinical)[0][1]
 
-            #Output
+            
             print(f"Total Blinks: {len(df_results)} | Risk Score: {((prob_rate_dur + prob_clinical)/2)*100:.1f}%")
 
-            # Blink biomarker score from spontaneous test
+            
             spon_blink_score = ((prob_rate_dur + prob_clinical) / 2) * 100.0
             score_state["sbr_score"] = round(spon_blink_score, 2)
 
@@ -995,9 +986,9 @@ def start_spon_br():
 
              
 
-#------------------------------------------------------------------------------------------
-                             # Voluntary Blink Recording (VBR) System
-#------------------------------------------------------------------------------------------
+
+                                                                                     # Voluntary blink analysis
+
 
 def start_vol_br():
 
@@ -1062,11 +1053,11 @@ def start_vol_br():
             return None
 
 
-    #Intensity calculator using predefined and well known ITU-R 601 formula
+    
     def get_pixel_intensity(pixel_bgr):
-        #unpack pixel_bgr
+        
         b, g, r = pixel_bgr
-        #the standard Luminance formula
+        #luminance formula - ITU-R 601
         intensity = 0.299*r + 0.587*g + 0.114*b
         return intensity
 
@@ -1196,34 +1187,28 @@ def start_vol_br():
             with mp_face_mesh.FaceMesh(max_num_faces = 1, refine_landmarks = True, min_detection_confidence = 0.5, min_tracking_confidence = 0.5) as face_mesh:
 
                 create_file('blinks.csv')
-                #Video Loop
                 while cap.isOpened():
 
-                    #Read video data
+                    #video 
                     rec, frame = cap.read()
                     
-                    #Avoiding webcam recording inconsistency
                     if not rec:
                         continue
 
-                    #Flipping to ensure mirror-like display
+                    
                     flipped_vid = cv2.flip(frame, 1)
 
-                    #Converting BGR to RGB because mediapipe uses RGB but cv2 uses BGR
                     video = cv2.cvtColor(flipped_vid, cv2.COLOR_BGR2RGB)
-                    
-                    #Making the colour swapped image unwriteable to make program more efficient and faster to read
                     video.flags.writeable = False
                     result = face_mesh.process(video)
                     
-                    #Converting colour code format back to cv2 format (BGR)
                     video.flags.writeable = True
                     video = cv2.cvtColor(video, cv2.COLOR_RGB2BGR)
 
-                    #Calculates dimensions
+                    #dimensions
                     height, width, _ = video.shape
                     
-                    #Condition just to avoid tracking errors
+                    #avoid more than one face detection error
                     if result.multi_face_landmarks:
 
                         face_landmark = result.multi_face_landmarks[0]
@@ -1235,27 +1220,27 @@ def start_vol_br():
                         #EAR Calculations
                         avg_EAR = (EARratio(R_XYs) + EARratio(L_XYs)) / 2
 
-                        current_time_wall = time.time() #"Master Clock"
+                        current_time_wall = time.time() 
                         time_since_start = current_time_wall - start_time
 
                         ear_buffer.append(avg_EAR)
-                        time_buffer.append(current_time_wall) # Use the raw wall time here
+                        time_buffer.append(current_time_wall) 
                         
                         #Ear buffer list new Method
                         if len(ear_buffer) > buffer_size:
                             ear_buffer.pop(0)
                             time_buffer.pop(0)
 
-                        #Time difference (dt)
+                        #(dt)
                         current_frame_time = time.time()
                         
-                        #Displacement (EAR Delta)
+                        #delta EAR
                         del_EAR = avg_EAR - prev_EAR
                         prev_EAR = avg_EAR # Update for next frame
 
                         #AI Predictor
                         if len(ear_buffer) >= 3:
-                            # Target is the middle frame (index -2) to allow "Look Ahead" (index -1)
+                            # middle frame (index -2)           next frame(index -1)                 prev frame (-3)
                             target_ear = ear_buffer[-2]
                             prev_ear = ear_buffer[-3]
                             next_ear = ear_buffer[-1]
@@ -1284,7 +1269,7 @@ def start_vol_br():
                         if prediction == 0 and len(ear_buffer) > 5:
                             baseline_ear = np.mean(ear_buffer[-5:])
 
-                        # --- THE BLINK TRACKER ---
+                        #blink detector
                         if prediction == 1:
                             if blinked_frames == 0:
                                 blink_count += 1
@@ -1298,11 +1283,9 @@ def start_vol_br():
                                 min_EAR_in_blink = target_ear
                                 time_of_min_ear = current_prediction_time
                         
-                        # --- SPLINE PHYSICS ---
+                        #spline function extracting
                         else:
                             if blinked_frames > 0:
-                                # Your Splicing Logic: Grab the frames that just occurred
-                                # We add +4 to the slice to ensure the "Opening" phase is fully in the buffer
                                 num_frames = min(blinked_frames + 6, len(ear_buffer)) 
                                 blink_times = list(time_buffer)[-num_frames:]
                                 blink_EARs = list(ear_buffer)[-num_frames:]
@@ -1314,7 +1297,6 @@ def start_vol_br():
                                     is_first_blink = len(blink_durations) == 0
 
                                     if gap_duration < 0.05 and not is_first_blink:
-                                        # MERGE LOGIC (For double blinks)
                                         #blink_durations[-1] = (physics["end_ts_precise"] - last_blink_start_timestamp)
                                         all_min_EARs[-1] = min(all_min_EARs[-1], min_EAR_in_blink)
                                         opening_velocities[-1] = max(opening_velocities[-1], physics["peak_opening_velocity"])
@@ -1330,7 +1312,6 @@ def start_vol_br():
                                         closing_times[-1] += physics["closing_dur"]
                                         opening_times[-1] += physics["opening_dur"]
                                     else:
-                                        # NEW BLINK RECORDING
                                         #blink_durations.append(physics["duration"])
                                         all_min_EARs.append(min_EAR_in_blink)
                                         intersaltatory_intervals.append(max(gap_duration, 0))
@@ -1364,17 +1345,17 @@ def start_vol_br():
                         #Fills CSV File
                         write_to_file('blinks.csv', 
                                     time_since_start, 
-                                    target_ear,      # Log the EAR the AI actually processed
+                                    target_ear,      
                                     del_EAR, 
-                                    v_target,        # Aligned velocity
-                                    accel_target,    # Aligned acceleration
+                                    v_target,       
+                                    accel_target,    
                                     prediction)
 
-                        #Blink count on screen for debugging
+                        #Blink count on screen  removed
                     else:
                         cv2.putText(video, "FACE NOT FOUND", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)      
                     
-                    #Temporary timer
+                    #temp timer
                     if time.time() - start_time > 35:
                         break
 
@@ -1382,7 +1363,7 @@ def start_vol_br():
                     if cv2.waitKey(1) & 0xFF == ord('x'):
                         break
 
-                    #Displays video with mesh
+                    #Display video with mesh removed
                     cv2.imshow("Blink Detection", video)
 
             #Calculates end time
@@ -1423,40 +1404,28 @@ def start_vol_br():
         
 
 
-
-    #Still need to add the weightings
-
-    # --- MERGED FINAL CLINICAL REPORT ---
-
-    # --- FIXED CLINICAL REPORT SECTION ---
     if os.path.exists('vol_report.csv'):
         df = pd.read_csv('vol_report.csv')
         initial_rows = len(df)
 
         df_results = df[
-            #Timing Constraints
             (df['Bottom Pause (ms)'] < 200) &
             
-            #Kinematic Sanity (Velocity vs Amplitude)
-            # Closing velocity should be significantly higher than 0 for a real blink
+            
             (df['Closing Vel (EAR/ms)'] > 0.002) & 
             (df['Amplitude (EAR)'] > 0.05) &
             
-            #Symmetry Sanity (Avoid 'teleporting' eyelid artifacts)
+            
             (df['Vel Symmetry'] > 0.15) & (df['Vel Symmetry'] < 5.0) &
             (df['Dur Symmetry'] > 0.2) & (df['Dur Symmetry'] < 5.0)]
         
             
 
-            # Calculating the data removed
+        #data removed percentage
         final_rows = len(df_results)
         prcnt_removed = round(((initial_rows-final_rows)/initial_rows)*100, 2)
         print(f"Percentage Data Removed: {prcnt_removed}%")
 
-        # Calculating the data removed
-        final_rows = len(df_results)
-        prcnt_removed = round(((initial_rows-final_rows)/initial_rows)*100, 2)
-        print(f"Percentage Data Removed: {prcnt_removed}%")
 
         score_state["vol_removed"] = prcnt_removed
         score_state["dqcs_vol"] = calculate_dqcs(
@@ -1466,7 +1435,7 @@ def start_vol_br():
             prcnt_removed
         )
 
-        # Combine both quality scores
+        #combine both quality scores
         if score_state["dqcs_spon"] is not None and score_state["dqcs_vol"] is not None:
             score_state["dqcs_final"] = round(
                 (score_state["dqcs_spon"] + score_state["dqcs_vol"]) / 2.0, 2
@@ -1478,7 +1447,7 @@ def start_vol_br():
 
         
         if not df_results.empty:
-            # Calculate means using the EXACT names defined in report_dict
+            #calcualte means
             avg_amp = df_results['Amplitude (EAR)'].mean()
             avg_c_vel = df_results['Closing Vel (EAR/ms)'].mean()
             avg_o_vel = df_results['Opening Vel (EAR/ms)'].mean()
@@ -1488,10 +1457,10 @@ def start_vol_br():
             avg_v_sym = df_results['Vel Symmetry'].mean()
             avg_d_sym = df_results['Dur Symmetry'].mean()
 
-            #Micro Model
+            #new and only model
             avg_features = [baseline_ear, avg_amp, avg_c_vel, avg_o_vel, avg_c_dur, avg_o_dur, avg_pause, avg_v_sym, avg_d_sym]
             
-            #Clinical Prediction
+            #prediction
             clinical_cols = ['Baseline', 'Amplitude', 'Closing Vel', 'Opening Vel', 'Closing Dur', 'Opening Dur', 'Pause Time', 'Vel Symmetry', 'Dur Symmetry']
             clinical_input = pd.DataFrame([avg_features], columns=clinical_cols)
 
@@ -1501,7 +1470,7 @@ def start_vol_br():
             #Output
             print(f"Total Blinks: {len(df_results)} | Risk Score: {(prob_clinical)*100:.1f}%")
 
-            # Blink biomarker score from voluntary test
+            #biomarker score from voluntary test
             score_state["vbr_score"] = round(prob_clinical * 100.0, 2)
 
             if score_state["sbr_score"] is not None and score_state["vbr_score"] is not None:
@@ -1514,9 +1483,7 @@ def start_vol_br():
 
         
                   
-# -------------------------
-# Background image (on Start_page)
-# -------------------------
+#Image on start page
 # load & resize to match window (800x800)
 img = Image.open("bg1.png").resize((1530, 800))
 bg = ImageTk.PhotoImage(img)
@@ -1526,12 +1493,10 @@ bg_label.image = bg
 bg_label.place(x=0, y=0, relwidth=1, relheight=1)
 bg_label.lower()   # <- send background to back (important)
 
-# -------------------------
-# Start page content
-# -------------------------
+#Start Page questions
 title = tk.Label(Start_page, text="Eye-Detect - Online Parkinson's Disease Screening tool",
                  font=font2, bg="#ffffff")
-# place title at top (we keep it visible above background)
+# place title at top (keeping it visible above background)
 title.pack(pady=(20, 10))
 
 # center container for the form (use pack + a fixed width frame)
@@ -1570,9 +1535,6 @@ submit_btn.grid(row=3, column=0, columnspan=2, pady=(8,0))
 # Raise start page
 Start_page.tkraise()
 
-# -------------------------
-# Example for (calibration) — simple label + back button
-# -------------------------
 
 progress_value = tk.IntVar()
 progress_value.set(0)
@@ -1633,9 +1595,9 @@ start_button.pack(pady=(12, 20))
 
 
 
-#-------------------------------------------------------------------------------------------------------------------------------------------
-                                                         #Questionnaire
-#-------------------------------------------------------------------------------------------------------------------------------------------
+
+                                                                #Questionnaire
+
 
 Question_lbl = tk.Label(Question_page, font=font2, text = "Questionnaire")
 Question_lbl.pack()
@@ -1661,7 +1623,7 @@ tremor_var = tk.IntVar(value=0)
 drug_var = tk.IntVar(value=0)
 score_state["eye_condition_flag"] = False
 
-# Creating Eye Condition Checkboxes
+#eye condition checkboxes
 eye_condition_lbl = tk.Label(Question_page, font=font1, text="Pre-existing Eye Conditions")
 eye_condition_lbl.pack(pady=5)
 
@@ -1687,7 +1649,7 @@ eye_condition_combo = ttk.Combobox(
 eye_condition_combo.set("None")
 eye_condition_combo.pack(pady=5)
 
-# Creating Sleep Checkboxes
+#sleep Checkboxes
 Sleep_Lbl = tk.Label(Question_page, font=font1, text="Hours Sleep Last Night")
 Sleep_Lbl.pack(pady=5)
 
@@ -1701,7 +1663,7 @@ sleep_combo = ttk.Combobox(
 sleep_combo.set("Select option")  # placeholder text
 sleep_combo.pack(pady=5)
 
-# Creating TOD Checkboxes
+#TOD Checkboxes
 TOD_Lbl = tk.Label(Question_page, font=font1, text="Time of Day")
 TOD_Lbl.pack(pady=5)
 
@@ -1715,7 +1677,7 @@ tod_combo = ttk.Combobox(
 tod_combo.set("Select option")
 tod_combo.pack(pady=5)
 
-# Creating Age Checkboxes
+#age Checkboxes
 Age_Lbl = tk.Label(Question_page, font=font1, text="Your Age") 
 Age_Lbl.pack(pady=5)
 
@@ -1729,7 +1691,7 @@ age_combo = ttk.Combobox(
 age_combo.set("Select option")
 age_combo.pack(pady=5)
 
-# Creating Symptoms Checkboxes
+#symptoms Checkboxes
 TOD_Lbl = tk.Label(Question_page, font=font1, text="Symptoms (Check all that apply)") 
 TOD_Lbl.pack(pady=5)
 
@@ -1753,7 +1715,7 @@ def submit_questions():
     age_group = age_group_var.get()
     eye_condition = eye_condition_var.get()
 
-    # Store eye-condition flag
+    #store eye-condition flag
     score_state["eye_condition_flag"] = (eye_condition != "None")
 
     # Calculate and store prodromal symptom score
@@ -1796,16 +1758,16 @@ def submit_questions():
     print("Saved:", row)
     submit_questions_btn.config(state="disabled")
 
-# Submit Button
+
 submit_questions_btn = tk.Button(Question_page, text="Submit", font=font1, command=submit_questions)
 submit_questions_btn.pack(pady=30)
 
 ST_button = tk.Button(Question_page, text="Start Calibration", command=start_calibration1, font = font3, state="active")
 ST_button.pack()
 
-#--------------------------------------------------------------------------------------------------------------------------------------------
-                       # Calibration Page
-#--------------------------------------------------------------------------------------------------------------------------------------------
+
+                                                                             # Calibration Page
+
 
 lbl2 = tk.Label(Calibration_page, text="Calibration Test", font=font2)
 lbl2.pack(pady=20)
@@ -1819,9 +1781,9 @@ btn1.pack(side="bottom", pady=70)
 canvas=tk.Canvas(Calibration_page, width = 650, height = 650)
 canvas.pack(pady=20)
 
-#------------------------------------------------------------------------------------------------------------------------------------        
-                                                      # Quiet Rest Test
-#------------------------------------------------------------------------------------------------------------------------------------
+     
+                                                                 # Spontaneous  test GUI
+
 lbl3 = tk.Label(QRT_page, text="Quiet Rest Test", font=font2)
 lbl3.pack(pady=20)
 
@@ -1831,7 +1793,7 @@ read_instructions.pack()
 
 next_test2 = tk.Label(QRT_page, text = "PRESS 'Next Test' NOW!", font=font2)
 
-#---------- Bell Sound Logic ---------
+#bell sound function
 
 def play_sound(bellsound):
     winsound.PlaySound('bellsound.wav', winsound.SND_FILENAME) 
@@ -1848,13 +1810,13 @@ def play():
 
     
 
-# ---------------- TIMER LOGIC ----------------
+#displayed timer
 # Label to display time
 timer_label = tk.Label(QRT_page, text="95", font=font2)
 timer_label.pack(pady=50)
 
 def start_timer():
-    countdown(95)  # start from 90 seconds
+    countdown(95)  # 5 second buffer + 90
 
 def countdown(time_left):
     if time_left >= 0:
@@ -1867,9 +1829,9 @@ start_timer0.pack(pady=25)
 btn2 = tk.Button(QRT_page, text="Next Test", command=go_to_RVB, font=font1)
 btn2.pack(side="bottom", pady=50)
 
-#---------------------------------------------------------------------------------------------------------------
-                                      # Voluntary Blinking Test
-#---------------------------------------------------------------------------------------------------------------
+
+                                                   # Voluntary blinking GUI
+
 
 lbl6 = tk.Label(RVB_page, text="Voluntary Blinking Test", font=font2)
 lbl6.pack(pady=20)
@@ -1905,9 +1867,9 @@ def play1():
 start_test1 = tk.Button(RVB_page, text="Start Test", font=font3, command=play1)
 start_test1.pack(pady=50)
 
-#------------------------------------------------------------------------------------------------------------------------------
-                                                       # Results
-#------------------------------------------------------------------------------------------------------------------------------
+
+                                                              # Results Page
+
 lbl7 = tk.Label(Results_page, text="Results", font=font2)
 lbl7.pack(pady=20)
 
