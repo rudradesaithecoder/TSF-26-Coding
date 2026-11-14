@@ -5,7 +5,7 @@ from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKF
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import classification_report, accuracy_score
 
-#load
+#load data
 df = pd.read_csv('manually_purified_V2.csv')
 X = df[['EAR_Relative', 'Velocity', 'Acceleration', 'EAR_Prev', 'EAR_Next']]
 y = df['BlinkLabel']
@@ -19,7 +19,7 @@ scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
 
-#tuning
+#tuning model grid search
 param_grid = {
     'n_estimators': [50, 100, 200],
     'max_depth': [5, 10, 15, None],
@@ -28,12 +28,12 @@ param_grid = {
 }
 cv_strategy = StratifiedKFold(n_splits=5)
 
-#grid search method
+
 grid_search = GridSearchCV(
     estimator=RandomForestClassifier(random_state=42),
     param_grid=param_grid,
     cv=cv_strategy,
-    scoring='f1_macro', #optimised for f1
+    scoring='f1_macro',
     n_jobs=-1 
 )
 

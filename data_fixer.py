@@ -5,14 +5,14 @@ import numpy as np
 df = pd.read_csv('master_training_purified.csv')
 
 
-# We look for the top 10% of movement intensity
+#top 10% of movement 
 v_recovery = df['Velocity'].abs().quantile(0.90)
 a_recovery = df['Acceleration'].abs().quantile(0.90)
 ear_drop_min = 0.05 # Even a tiny 5% drop counts if it's fast
 
 def reclaim_lost_blinks(df):
     count = 0
-    # We look at windows of data to find the 'V' shape
+    #find  'V' shape
     for i in range(2, len(df) - 2):
         # Only check rows currently labeled as 0 (Open)
         if df.loc[i, 'BlinkLabel'] == 0:
@@ -29,9 +29,9 @@ def reclaim_lost_blinks(df):
             has_movement = abs(df.loc[i, 'EAR Delta']) > 0.005
             
             if high_kinetic and is_a_dip and has_movement:
-                # RECLAIM IT: Flip the label to 1
+                #fix to 1
                 df.loc[i, 'BlinkLabel'] = 1
-                # Also flip a small buffer around it so the 'event' is captured
+                #buffer near event
                 df.loc[i-1:i+1, 'BlinkLabel'] = 1
                 count += 1
                 
@@ -80,8 +80,9 @@ def sync_with_velocity(df, v_thresh):
 
 df['BlinkLabel'] = sync_with_velocity(df, v_threshold)
 
-# Save the final, synchronized training set
+#save to training
 df.to_csv('master_training_ULTIMATE_FIXED.csv', index=False)'''
+#ultimate fixed is last model
 
 import pandas as pd
 

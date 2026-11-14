@@ -1,4 +1,6 @@
-'''# DELETE THIS ENTIRE BLOCK:
+
+
+'''
             if len(ear_buffer) >= 3:
                 dt = time_buffer[-1] - time_buffer[-2]
                 if dt > 0:

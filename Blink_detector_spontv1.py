@@ -1,5 +1,4 @@
-#Python File
-#Imports
+
 import cv2
 import mediapipe as mp
 import math
@@ -14,10 +13,10 @@ from scipy.stats import pearsonr
 import matplotlib.pyplot as plt
 
 
-#Key function
+#shorten module name
 mp_face_mesh = mp.solutions.face_mesh
 
-#Importing all the models
+#model import (latest as of 14/11/2026)
 vol_diag_model = joblib.load('vol_clinical_diagnosis_model.pkl')
 vol_scaler = joblib.load('vol_clinical_scaler.pkl')
 det_model = joblib.load('rate_duration_model.pkl')
@@ -28,7 +27,7 @@ diag_model = joblib.load('clinical_diagnosis_model.pkl')
 diag_scaler = joblib.load('clinical_scaler.pkl')
 
 
-
+#cubic spline function
 def get_blink_physics_spline(times, values, min_EAR_during_blink, baseline_EAR):
     try:
         times_arr, indices = np.unique(times, return_index=True)
@@ -81,31 +80,32 @@ def get_blink_physics_spline(times, values, min_EAR_during_blink, baseline_EAR):
         return None
 
 
-#Intensity calculator using predefined and well known ITU-R 601 formula
+#intensity calculator
 def get_pixel_intensity(pixel_bgr):
-    #unpack pixel_bgr
+    
     b, g, r = pixel_bgr
-    #the standard Luminance formula
+    #luminance formula
     intensity = 0.299*r + 0.587*g + 0.114*b
     return intensity
 
 
+#blink file creation
 def create_file(filename):
     
     with open(filename, mode = 'w', newline = '') as f:
         writer = csv.writer(f)
         writer.writerow(["Timestamp", "EAR", "EAR Delta", "Velocity", "Acceleration", "BlinkLabel"])
 
-
+#blink addition function
 def write_to_file(filename, TimeStamp, EAR_Val, del_EAR, velocity, acceleration, Blink_Label):
     with open(filename, mode = 'a', newline = '') as f:
         writer = csv.writer(f)
         writer.writerow([TimeStamp, EAR_Val, del_EAR, velocity, acceleration,  Blink_Label])
 
-#Timer Starter
+#timer starter
 start_time = time.time()
 
-#EAR Calculator 
+#EAR calculator 
 def EARratio(coords):
     w = math.dist(coords[0],coords[1])
     h1 = math.dist(coords[2],coords[3])
@@ -114,7 +114,7 @@ def EARratio(coords):
     return EAR
 
 
-#Initialising Key Values
+#initialising
 blinked_frames = 0
 blink_count = 0
 blink_start = 0
@@ -143,43 +143,44 @@ v_target = 0
 accel_target = 0
 target_ear = 0
 
-#Latest solution idea (Using buffer)
-
+#buffer attempt
 ear_buffer = []
 time_buffer = []
-buffer_size = 25 # Stores ~0.83 s of data to capture full blink curve
+buffer_size = 25 #35 frames
 baseline_ear = 0.3
 threshold_start = 0.25
 
-#Add new lists to store the spline-calculated physics
+#spline physics lists
 spline_peak_velocities = []
 #spline_peak_accelerations = []
 
  
-#Begins recording
+#webcam start
 cap = cv2.VideoCapture(0)
 '''cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 cap.set(cv2.CAP_PROP_FPS, 30)
 '''
 
-# Collect raw data
+#fps check
 actual_fps = cap.get(cv2.CAP_PROP_FPS)
 
+#resolution check
 if actual_fps <= 0: actual_fps = 30 
 actual_h = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
 
-# Normalize
+#resolution normalisation
 resNorm = min(actual_h / 1080, 1.0)
 fpsNorm = min(actual_fps / 60, 1.0)
 
-#Calculate Score
+#quality score check
 s_cam = (0.5 * resNorm + 0.5 * fpsNorm)
 print(f"Camera Quality Score: {s_cam:.2f}")
 
+
 with mp_face_mesh.FaceMesh(max_num_faces = 1, refine_landmarks = True, min_detection_confidence = 0.5, min_tracking_confidence = 0.5) as face_mesh:
     
-    #The Light requirements - to be modified
+    #light requirements
     light_crit_low = 40
     light_low = 55
     light_high = 160
@@ -199,7 +200,7 @@ with mp_face_mesh.FaceMesh(max_num_faces = 1, refine_landmarks = True, min_detec
         flipped_frame = cv2.flip(frame, 1)
         h, w, _ = flipped_frame.shape
 
-        # Convert for MediaPipe
+        #rgb convert and flip
         rgb_frame = cv2.cvtColor(flipped_frame, cv2.COLOR_BGR2RGB)
         flipped_frame.flags.writeable = False
         results = face_mesh.process(rgb_frame)
@@ -212,109 +213,113 @@ with mp_face_mesh.FaceMesh(max_num_faces = 1, refine_landmarks = True, min_detec
         if results.multi_face_landmarks:
             landmarks = results.multi_face_landmarks[0]
 
-            #Face centering system
+            #centering system
             nose = landmarks.landmark[0]
             face_x, face_y = nose.x, nose.y
 
             dist_from_center = math.dist((face_x,face_y),(0.5,0.5))
             
-            #Eye lighting check system
+            #lighting check system
             eye_intensities = []
             drawing_points = []
             for point_counter in right_indexes + left_indexes:
-                #Extracting each index of the eyes
+                
                 point = landmarks.landmark[point_counter]
-                #converting mediapipe float to pixel value
+                
                 cx_raw, cy_raw = int(point.x*w), int(point.y*h)
-                #Ensuring pixel value is within bounds
                 cx, cy = max(0, min(cx_raw, w - 1)), max(0, min(cy_raw, h - 1))
-                #Draws a circle at the eye points
+
+                #circle at the eye points
                 cv2.circle(flipped_frame, (cx,cy), 2, (40,255,0), 1)
                 drawing_points.append((point.x, point.y))
-                #Extracts bgr list for the colours at the point using Matrix Notation
+
+                
                 colour_at_point = flipped_frame[cy, cx]
 
                 eye_intensities.append(get_pixel_intensity(colour_at_point))
 
+            #point average for brightness
             eye_brightness = np.mean(eye_intensities)
 
-            #Brightness bar
+            #live brightness bar
             bar_height = int((eye_brightness / 255) * 200)
             cv2.rectangle(flipped_frame, (w-50, h-50), (w-30, h-250), (50, 50, 50), -1)
             cv2.rectangle(flipped_frame, (w-50, h-50), (w-30, h-50-bar_height), (255, 255, 0), -1) 
             cv2.putText(flipped_frame, "BRIGHT", (w-80, h-260), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
             if dist_from_center <= valid_dist_center:
-                #Draw a rectangle showing the 40-60% zone
                 start_point = (int(w * 0.3), int(h * 0.2))
                 end_point = (int(w * 0.7), int(h * 0.8))
                 cv2.rectangle(flipped_frame, start_point, end_point, (0, 255, 0), 1)
           
-            #Determine the status
+            #centering
             if dist_from_center > valid_dist_center:
-                #Draw a rectangle showing the 40-60% zone
+                #rectangle showing the zone
                 start_point = (int(w * 0.3), int(h * 0.2))
                 end_point = (int(w * 0.7), int(h * 0.8))
                 cv2.rectangle(flipped_frame, start_point, end_point, (0, 0, 255), 1)
                 alert = "Face not centered, move face toward middle of the frame"
                 color = (0, 0, 255) 
                 light_eligible = False
-            #Red Condition
+
+            #red 
             elif eye_brightness <= light_crit_low:
-                alert = "CRITICAL: Too dark to detect eyes"
+                alert = "Too dark"
                 color = (0, 0, 255) 
                 light_eligible = False
-            #Yellow condition
+
+            #yellow 
             elif light_crit_low < eye_brightness <= light_low:
-                alert = "Slightly Low Light: Brighten screen or environment"
+                alert = "Slightly Low Light"
                 color = (0, 255, 255)
                 light_eligible = False
-            #Green Condition
+            #green 
             elif light_low < eye_brightness < light_high:
-                alert = "PERFECT CONDITIONS: Ready to test"
+                alert = "Ready to test"
                 color = (0, 255, 0)
                 light_eligible = True
 
-            #Orange Condition
+            #orange
             elif light_high < eye_brightness <= light_crit_high:
-                alert = "Slightly High Light: May cause error in reflex test"
+                alert = "Slightly High Light"
                 color = (0, 165, 255)
                 light_eligible = False
 
-            #Red condition
+            #red (too high)
             elif eye_brightness > light_crit_high: 
-                alert = "CRITICAL: Light too bright (Washed out)"
+                alert = "Light too bright"
                 color = (0, 0, 255)
                 light_eligible = False
             else:
                 pass
             
-            #Timer system for light and centralising stability
+            #timer system for condition check
             if light_eligible:
                 if stable_time == -1:
                     stable_time = time.time()
                 elapsed = time.time() - stable_time
 
                 if elapsed > stable_start:
-                    alert = "STABLE! Press 'c' to start"
+                    alert = "Press 'c' to start"
                     color = (0,255,0)
                     stable = True
                 else:
-                    alert = f"HOLD STILL for {round(stable_start - elapsed, 1)}s more"
+                    alert = f"Hold Still for {round(stable_start - elapsed, 1)}s more"
                     stable = False
             else:
                 stable_time = -1
                 stable = False
 
             cv2.putText(flipped_frame, alert, (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
-            #Display lightning check
+            
             
         else:
-            cv2.putText(flipped_frame, "FACE NOT FOUND", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            cv2.putText(flipped_frame, "Face Not Found", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
             stable_time = -1
 
         cv2.imshow("Lighting Optimisation", flipped_frame)
-        #cv2 safety net
+
+        #safety net
         key = cv2.waitKey(1) & 0xff
 
         if stable and key == ord('c'):
@@ -329,75 +334,66 @@ cv2.destroyWindow("Lighting Optimisation")
 
 time.sleep(2)
 
-#Stopwatch reset
+#stopwatch reset
 start_time = time.time()
 last_blink_end = time.time() 
 prev_frame_time = time.time()
 
-#Using FaceMesh class
+#begin test 1
 with mp_face_mesh.FaceMesh(max_num_faces = 1, refine_landmarks = True, min_detection_confidence = 0.5, min_tracking_confidence = 0.5) as face_mesh:
 
     create_file('blinks.csv')
-    #Video Loop
+    
     while cap.isOpened():
 
-        #Read video data
         rec, frame = cap.read()
         
-        #Avoiding webcam recording inconsistency
         if not rec:
             continue
 
-        #Flipping to ensure mirror-like display
         flipped_vid = cv2.flip(frame, 1)
 
-        #Converting BGR to RGB because mediapipe uses RGB but cv2 uses BGR
         video = cv2.cvtColor(flipped_vid, cv2.COLOR_BGR2RGB)
         
-        #Making the colour swapped image unwriteable to make program more efficient and faster to read
         video.flags.writeable = False
         result = face_mesh.process(video)
         
-        #Converting colour code format back to cv2 format (BGR)
         video.flags.writeable = True
         video = cv2.cvtColor(video, cv2.COLOR_RGB2BGR)
 
-        #Calculates dimensions
         height, width, _ = video.shape
         
-        #Condition just to avoid tracking errors
         if result.multi_face_landmarks:
 
             face_landmark = result.multi_face_landmarks[0]
         
-            #Getting the x and y's of the indexes
             R_XYs = [(face_landmark.landmark[r].x, face_landmark.landmark[r].y) for r in right_indexes]
             L_XYs = [(face_landmark.landmark[l].x, face_landmark.landmark[l].y) for l in left_indexes]
             
-            #EAR Calculations
+            #EAR calculations
             avg_EAR = (EARratio(R_XYs) + EARratio(L_XYs)) / 2
 
-            current_time_wall = time.time() #"Master Clock"
+            current_time_wall = time.time() 
             time_since_start = current_time_wall - start_time
 
             ear_buffer.append(avg_EAR)
-            time_buffer.append(current_time_wall) # Use the raw wall time here
+            time_buffer.append(current_time_wall)
             
             #Ear buffer list new Method
             if len(ear_buffer) > buffer_size:
                 ear_buffer.pop(0)
                 time_buffer.pop(0)
 
-            #Time difference (dt)
+            #dt
             current_frame_time = time.time()
             
-            #Displacement (EAR Delta)
+            #delta EAR
             del_EAR = avg_EAR - prev_EAR
-            prev_EAR = avg_EAR # Update for next frame
+            prev_EAR = avg_EAR 
 
-            #AI Predictor
+            #blink AI
             if len(ear_buffer) >= 3:
-                # Target is the middle frame (index -2) to allow "Look Ahead" (index -1)
+                #middle frame (index -2)        next frame (index -1)               previous frame (index -3)
                 target_ear = ear_buffer[-2]
                 prev_ear = ear_buffer[-3]
                 next_ear = ear_buffer[-1]
@@ -405,13 +401,14 @@ with mp_face_mesh.FaceMesh(max_num_faces = 1, refine_landmarks = True, min_detec
                 dt_target = time_buffer[-2] - time_buffer[-3]
                 dt_next = time_buffer[-1] - time_buffer[-2]
                 
-                # Velocity/Accel aligned specifically to the target frame
+                #vel and acc
                 v_target = (target_ear - prev_ear) / dt_target if dt_target > 0 else 0
                 v_next = (next_ear - target_ear) / dt_next if dt_next > 0 else 0
                 accel_target = (v_next - v_target) / dt_next if dt_next > 0 else 0
                 
                 rel_ear = target_ear / baseline_ear if baseline_ear > 0 else 0
-                
+
+                #clues = parameters
                 clues_v2 = pd.DataFrame([[rel_ear, v_target, accel_target, prev_ear, next_ear]], 
                                         columns=['EAR_Relative', 'Velocity', 'Acceleration', 'EAR_Prev', 'EAR_Next'])
 
@@ -422,11 +419,11 @@ with mp_face_mesh.FaceMesh(max_num_faces = 1, refine_landmarks = True, min_detec
                 prediction = 0
                 current_prediction_time = current_time_wall
 
-            # Update baseline on open eyes
+            #baseline
             if prediction == 0 and len(ear_buffer) > 5:
                 baseline_ear = np.mean(ear_buffer[-5:])
 
-            # --- THE BLINK TRACKER ---
+            #blink tracking
             if prediction == 1:
                 if blinked_frames == 0:
                     blink_count += 1
@@ -440,11 +437,9 @@ with mp_face_mesh.FaceMesh(max_num_faces = 1, refine_landmarks = True, min_detec
                     min_EAR_in_blink = target_ear
                     time_of_min_ear = current_prediction_time
             
-            # --- SPLINE PHYSICS ---
+            #cubic spline use
             else:
                 if blinked_frames > 0:
-                    # Your Splicing Logic: Grab the frames that just occurred
-                    # We add +4 to the slice to ensure the "Opening" phase is fully in the buffer
                     num_frames = min(blinked_frames + 6, len(ear_buffer)) 
                     blink_times = list(time_buffer)[-num_frames:]
                     blink_EARs = list(ear_buffer)[-num_frames:]
@@ -456,23 +451,21 @@ with mp_face_mesh.FaceMesh(max_num_faces = 1, refine_landmarks = True, min_detec
                         is_first_blink = len(blink_durations) == 0
 
                         if gap_duration < 0.05 and not is_first_blink:
-                            # MERGE LOGIC (For double blinks)
+                            #double blinks merge
                             blink_durations[-1] = (physics["end_ts_precise"] - last_blink_start_timestamp)
                             all_min_EARs[-1] = min(all_min_EARs[-1], min_EAR_in_blink)
                             opening_velocities[-1] = max(opening_velocities[-1], physics["peak_opening_velocity"])
                             pause_durations[-1] += physics["pause_duration"]
                             blink_amplitudes[-1] = max(blink_amplitudes[-1], physics["amplitude"])
                             
-                            # Use the correct list names and physics keys
                             vel_symmetry[-1] = (vel_symmetry[-1] + physics["velocity_symmetry"]) / 2
                             dur_symmetry[-1] = (dur_symmetry[-1] + physics["duration_symmetry"]) / 2
                             
-                            # Update velocities and durations used in averages
                             spline_peak_velocities[-1] = max(spline_peak_velocities[-1], abs(physics["peak_closing_velocity"]))
                             closing_times[-1] += physics["closing_dur"]
                             opening_times[-1] += physics["opening_dur"]
                         else:
-                            # NEW BLINK RECORDING
+                            #new blink
                             blink_durations.append(physics["duration"])
                             all_min_EARs.append(min_EAR_in_blink)
                             intersaltatory_intervals.append(max(gap_duration, 0))
@@ -499,50 +492,48 @@ with mp_face_mesh.FaceMesh(max_num_faces = 1, refine_landmarks = True, min_detec
 
                         last_blink_end = physics["end_ts_precise"]
 
-                    # Reset for next blink
+                    #blink reset
                     min_EAR_in_blink = 1.0
                     blinked_frames = 0
             
-            #Fills CSV File
+            #fill CSV file
             write_to_file('blinks.csv', 
                           time_since_start, 
-                          target_ear,      # Log the EAR the AI actually processed
+                          target_ear,     
                           del_EAR, 
-                          v_target,        # Aligned velocity
-                          accel_target,    # Aligned acceleration
+                          v_target,        
+                          accel_target,    
                           prediction)
 
-            #Blink count on screen for debugging
+            #blink count on screen
             #cv2.putText(video, str(blink_count), (560, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,0), 2)
         else:
             cv2.putText(flipped_frame, "FACE NOT FOUND", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)      
         
-        #Temporary timer
+        #temp timer
         if time.time() - start_time > 60:
             break
 
-        #Closes code when x is pressed
+        #x escape key
         if cv2.waitKey(1) & 0xFF == ord('x'):
             break
 
-        #Displays video with mesh
         cv2.imshow("Blink Detection", video)
 
-#Calculates end time
+#end time 1
 end_time = time.time()
 
-#Neccesary to stop using webcam
+#shut webcame
 cap.release()
     
-#Closes webcam window
+#shut window
 cv2.destroyAllWindows()
 
-#Total time calculator
+#time calculator 1
 total_time = end_time - start_time
 
-#Blink Summary
+#blink averaging
 if blink_count > 0:
-    # Ensure all lists match the same length (protects against list mismatch errors)
     min_length = len(blink_durations)
     
     blink_rate = blink_count/total_time
@@ -568,37 +559,31 @@ if blink_count > 0:
     df_report.to_csv('report.csv', index=False)
     
 
-#Still need to add the weightings
 
-# --- MERGED FINAL CLINICAL REPORT ---
+#                                                               --- Clinical Report Section ---
 
-# --- FIXED CLINICAL REPORT SECTION ---
+#data cleanup
 if os.path.exists('report.csv'):
     df = pd.read_csv('report.csv')
     initial_rows = len(df)
 
     df_results = df[
-    #Timing Constraints
     (df['Duration (ms)'] > 30) & (df['Duration (ms)'] < 250) & 
     (df['Bottom Pause (ms)'] < 200) &
     
-    #Kinematic Sanity (Velocity vs Amplitude)
-    # Closing velocity should be significantly higher than 0 for a real blink
+    
     (df['Closing Vel (EAR/ms)'] > 0.002) & 
     (df['Amplitude (EAR)'] > 0.05) &
     
-    #Symmetry Sanity (Avoid 'teleporting' eyelid artifacts)
     (df['Vel Symmetry'] > 0.15) & (df['Vel Symmetry'] < 5.0) &
     (df['Dur Symmetry'] > 0.2) & (df['Dur Symmetry'] < 5.0)
 ]
-    
-    # Calculating the data removed
+    #data removed percent
     final_rows = len(df_results)
     prcnt_removed = round(((initial_rows-final_rows)/initial_rows)*100, 2)
     print(f"Percentage Data Removed: {prcnt_removed}%")
 
     if not df_results.empty:
-        # Calculate means using the EXACT names defined in report_dict
         avg_rate = (blink_count / total_time) * 60
         avg_dur = df_results['Duration (ms)'].mean()
         avg_amp = df_results['Amplitude (EAR)'].mean()
@@ -610,21 +595,21 @@ if os.path.exists('report.csv'):
         avg_v_sym = df_results['Vel Symmetry'].mean()
         avg_d_sym = df_results['Dur Symmetry'].mean()
 
-        #Macro Model
+        #basic paris model
         det_input = pd.DataFrame([[avg_rate, avg_dur]], 
                                  columns=['Blink Rate (bpm)', 'Blink Duration (ms)'])
         scld_det = det_scaler.transform(det_input)
         prob_rate_dur = det_model.predict_proba(scld_det)[0][1]
 
-        #Micro Model
+        #deeper Agostino model
         avg_features = [baseline_ear, avg_amp, avg_c_vel, avg_o_vel, avg_c_dur, avg_o_dur, avg_pause, avg_v_sym, avg_d_sym]
         
-        #Clinical Prediction
+        #deep modek prediction
         clinical_cols = ['Baseline', 'Amplitude', 'Closing Vel', 'Opening Vel', 'Closing Dur', 'Opening Dur', 'Pause Time', 'Vel Symmetry', 'Dur Symmetry']
         clinical_input = pd.DataFrame([avg_features], columns=clinical_cols)
 
         scld_clinical = diag_scaler.transform(clinical_input)
         prob_clinical = diag_model.predict_proba(scld_clinical)[0][1]
 
-        #Output
+        #risk score
         print(f"Total Blinks: {len(df_results)} | Risk Score: {((prob_rate_dur + prob_clinical)/2)*100:.2f}%")

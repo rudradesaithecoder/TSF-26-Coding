@@ -21,7 +21,7 @@ def generate_full_clinical_data(num_people=200, blinks_per_person=20):
     rows = []
     
     #healthy: close vel 189.2, open vel 102.6, amp 7.4mm, close dur 69.8ms, open dur 190.7ms
-    # PD (OFF): close 91.9, open 54.3, amp 3.7mm, close dur 69.9ms, open dur 194.5ms
+    # PD: close 91.9, open 54.3, amp 3.7mm, close dur 69.9ms, open dur 194.5ms
     
     for i in range(num_people):
         is_pd = np.random.choice([0, 1])
@@ -85,11 +85,11 @@ df.to_csv('clinical_training.csv', index=False)'''
 
 
 '''
-#Model for blinking (spontaneous)
+#spontaneous model training data
 def get_params(mean, std):
-    # Calculate sigma for log-space
+    # Calculate sigma
     sigma = np.sqrt(np.log(1 + (std**2 / mean**2)))
-    # Calculate mu for log-space
+    # Calculate mu
     mu = np.log(mean) - 0.5 * (sigma**2)
     return mu, sigma
 
@@ -101,7 +101,7 @@ hc_rate_std = 17.06 # Based on Vasudevan
 hc_dur_mean = 55.05 #Based on Vasudevan
 hc_dur_std = 8.10 #Based on Vasudevan
 
-#Using function logarithmised data values
+#lognormal for healthy data
 hc_rate_mu, hc_rate_sigma = get_params(hc_rate_mean, hc_rate_std)
 hc_dur_mu, hc_dur_sigma = get_params(hc_dur_mean, hc_dur_std)
 
@@ -112,34 +112,34 @@ pd_rate_std = 8.92 #based on Vasudevan
 pd_dur_mean = 63.25 #Based on Vasudevan
 pd_dur_std = 15.74 #based on Vasudevan
 
-#Using function logarithmised data values
+#lognormal for PD data
 pd_rate_mu, pd_rate_sigma = get_params(pd_rate_mean, pd_rate_std)
 pd_dur_mu, pd_dur_sigma = get_params(pd_dur_mean, pd_dur_std)
 
 number = int(input("Enter the number of datasets you want for each: "))
 
-#Generating random numbers based on paper's 
+#lognormal based on papers
 hc_rates = np.random.lognormal(hc_rate_mu, hc_rate_sigma, number)
 hc_durs = np.random.lognormal(hc_dur_mu, hc_dur_sigma, number)
 hc_labels = [0]*number
 
-#Clipping Healthy Control numbers
+#clipping wihin bounds
 #hc_rate = np.clip(hc_rate, 5.0, None)
 #hc_dur = np.clip(hc_dur, 40.0, None)
 
-#Generate the 'randomness' for Rate (as a Z-score)
+#randomness as Z-score
 z_rates = np.random.normal(0, 1, number)
 pd_rates = np.exp(pd_rate_mu + pd_rate_sigma * z_rates)
 
-#Generate the 'randomness' for Duration (linked to the Rate's Z-score)
-#Use the correlation to pull the Duration Z-score in the opposite direction
+
+#z-score random generator
 z_dur_noise = np.random.normal(0, 1, number)
 z_dur = (corr * z_rates) + (np.sqrt(1 - corr**2) * z_dur_noise)
 pd_durs = np.exp(pd_dur_mu + pd_dur_sigma * z_dur)
 
 pd_labels = [1]*number
 
-#Combining all the patients
+#combine all patients
 blink_rates = np.concatenate([hc_rates,pd_rates])
 durations = np.concatenate([hc_durs,pd_durs])
 labels = np.concatenate([hc_labels,pd_labels])
@@ -160,7 +160,7 @@ df = df.sample(frac=1, random_state=42).reset_index(drop=True)
 df.to_csv('PatientsFile2.csv', index=False)'''
 
 
-# Model for Voluntary Blinking Data
+#voluntary blinking data
 '''mm_val = 9.0
 
 if os.path.exists('voluntary_clinical_training.csv'):
@@ -175,7 +175,7 @@ def get_log_params(mean, std):
 def generate_voluntary_clinical_data(num_people=200, blinks_per_person=20):
     rows = []
     
-    # Kinematic values based on Table 2 for Voluntary Blinking 
+    #table 2 data from paper
     #healthy: close vel 340.1, open vel 154.1, amp 12.4mm, pause 44.2ms
     #PD: close vel 321.6, open vel 150.3, amp 11.4mm, pause 135.1ms
     
@@ -232,7 +232,7 @@ def generate_voluntary_clinical_data(num_people=200, blinks_per_person=20):
             
     return pd.DataFrame(rows)
 
-# Input and Execution
+
 patients = int(input("Enter number of patients to create voluntary data: "))
 blinks = int(input("Enter desired number of blinks per patient: "))
 
@@ -247,7 +247,7 @@ df.to_csv('voluntary_clinical_training.csv', index=False)'''
 #load master training data
 df = pd.read_csv('refined_training_data.csv')
 
-#define thresholds
+# thresholds
 V_THRESH = 5.0
 A_THRESH = 100.0
 
@@ -261,8 +261,6 @@ blink_groups = df[df['BlinkLabel'] == 1].groupby('event_id')
 df['peak_vel_event'] = blink_groups['Velocity'].transform(lambda x: x.abs().max())
 df['peak_accel_event'] = blink_groups['Acceleration'].transform(lambda x: x.abs().max())
 
-# 5. PURIFY: Re-label weak blinks to 0 (Open)
-# A blink is "Weak" if it fails to reach EITHER the Velocity OR Acceleration limit
 weak_blink_filter = (df['BlinkLabel'] == 1) & (
     (df['peak_vel_event'] < V_THRESH) | 
     (df['peak_accel_event'] < A_THRESH)
@@ -271,7 +269,6 @@ weak_blink_filter = (df['BlinkLabel'] == 1) & (
 frames_changed = len(df[weak_blink_filter])
 df.loc[weak_blink_filter, 'BlinkLabel'] = 0
 
-# 6. Save the new high-quality training file
 df_purified = df.drop(columns=['event_id', 'peak_vel_event', 'peak_accel_event'])
 df_purified.to_csv('master_training_purified.csv', index=False)
 
